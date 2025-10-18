@@ -2,18 +2,18 @@ import logging
 from typing import Dict, Any, Optional
 from abc import ABC, abstractmethod
 
-from database import (
+from repositories import (
     get_image, update_extracted_info,
     update_image_status
 )
 from schemas import ExtractionRequest
 from config import settings
-from app_schema import (
+from repositories import (
     get_app_display_name, get_extraction_fields_for_app
 )
 from background import BackgroundTaskExtension
 from utils import decimal_to_float
-from extraction import (
+from domains.extraction_engine import (
     extract_information_from_multi_images_with_ocr,
     extract_information_from_single_image_with_ocr
 )

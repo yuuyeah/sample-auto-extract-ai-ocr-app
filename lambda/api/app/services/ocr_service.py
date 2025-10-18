@@ -3,7 +3,7 @@ import logging
 from typing import Optional, Dict, Any
 from abc import ABC, abstractmethod
 
-from database import (
+from repositories import (
     create_job, get_images, get_job, get_images_by_job_id,
     get_image, update_ocr_result as db_update_ocr_result,
     update_image_status
@@ -11,7 +11,7 @@ from database import (
 from schemas import OcrResult, OcrResultResponse
 from config import settings
 from background import BackgroundTaskExtension
-from ocr import perform_ocr_multipage, perform_ocr_individual_page, perform_ocr_single_image
+from domains.ocr_engine import perform_ocr_multipage, perform_ocr_individual_page, perform_ocr_single_image
 
 logger = logging.getLogger(__name__)
 

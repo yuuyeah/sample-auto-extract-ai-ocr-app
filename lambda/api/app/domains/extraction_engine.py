@@ -1,4 +1,4 @@
-from utils.prompts import (
+from domains.prompts import (
     create_single_with_ocr_prompt, create_single_without_ocr_prompt,
     create_multi_with_ocr_prompt, create_multi_without_ocr_prompt
 )
@@ -6,13 +6,13 @@ from utils.helpers import safe_get_from_dynamo_data, float_to_decimal
 from config import settings
 from utils.bedrock import call_bedrock, call_bedrock_with_retry, parse_converse_response, extract_json_from_response, parse_extraction_response
 from clients import s3_client
-from utils.template import generate_unified_template
+from domains.template import generate_unified_template
 import logging
 import base64
 import uuid
 
-from app_schema import get_app_schema, get_extraction_fields_for_app, get_field_names_for_app, get_custom_prompt_for_app, DEFAULT_APP
-from database import get_image, update_extracted_info, update_image_status
+from repositories import get_app_schema, get_extraction_fields_for_app, get_field_names_for_app, get_custom_prompt_for_app, DEFAULT_APP
+from repositories import get_image, update_extracted_info, update_image_status
 
 logger = logging.getLogger(__name__)
 

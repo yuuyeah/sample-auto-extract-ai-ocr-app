@@ -12,8 +12,8 @@ from PIL import Image
 import tempfile
 
 from config import settings
-from database import get_image, update_image_status, update_converted_image, update_ocr_result, update_parent_document_status, create_individual_page_record
-from app_schema import DEFAULT_APP, get_app_input_methods
+from repositories import get_image, update_image_status, update_converted_image, update_ocr_result, update_parent_document_status, create_individual_page_record
+from repositories import DEFAULT_APP, get_app_input_methods
 from utils.helpers import resize_image
 
 logger = logging.getLogger(__name__)

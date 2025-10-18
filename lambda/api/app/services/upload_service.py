@@ -6,7 +6,7 @@ from typing import Dict, Any
 from fastapi.responses import StreamingResponse
 import io
 
-from database import (
+from repositories import (
     create_image_record, get_image, get_images, update_image_status, update_converted_image
 )
 from schemas import (
@@ -14,7 +14,7 @@ from schemas import (
 )
 from config import settings
 from utils import resize_image, convert_pdf_to_image
-from app_schema import get_app_schemas, get_app_input_methods
+from repositories import get_app_schemas, get_app_input_methods
 
 logger = logging.getLogger(__name__)
 

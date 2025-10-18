@@ -6,8 +6,8 @@ from typing import Dict, Any, Optional, List
 from botocore.exceptions import ClientError
 
 from config import settings
-from app_schema import get_app_input_methods
-from database import create_image_record
+from repositories import get_app_input_methods
+from repositories import create_image_record
 
 logger = logging.getLogger(__name__)
 

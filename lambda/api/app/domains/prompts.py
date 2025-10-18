@@ -3,7 +3,7 @@
 """
 import json
 from utils.helpers import decimal_to_float, safe_get_from_dynamo_data
-from utils.template import generate_unified_template
+from domains.template import generate_unified_template
 import logging
 
 logger = logging.getLogger(__name__)

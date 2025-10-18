@@ -8,11 +8,12 @@ from schemas import (
     SchemaGenerateRequest, PresignedUrlRequest, CustomPromptRequest, PresignedUrlResponse, SchemaSaveRequest
 )
 from config import settings
-from app_schema import (
+from repositories import (
     get_app_schemas, get_app_schema, get_extraction_fields_for_app,
     get_field_names_for_app, get_custom_prompt_for_app, update_app_schema,
-    delete_app_schema, generate_schema_fields_from_image
+    delete_app_schema
 )
+from domains.schema_generator import generate_schema_fields_from_image
 
 logger = logging.getLogger(__name__)
 
