@@ -4,23 +4,21 @@ from abc import ABC, abstractmethod
 
 from repositories import (
     get_image, update_extracted_info,
-    update_image_status
+    update_image_status, get_extraction_fields_for_app,
+    get_field_names_for_app, get_custom_prompt_for_app,
+    get_app_display_name, DEFAULT_APP
 )
 from schemas import ExtractionRequest
 from config import settings
-from repositories import (
-    get_app_display_name, get_extraction_fields_for_app
-)
 from background import BackgroundTaskExtension
 from utils import decimal_to_float
+from clients import s3_client
 from domains.extraction_engine import (
     extract_information_from_multi_images_with_ocr,
     extract_information_from_single_image_with_ocr
 )
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_APP = "default"
 
 
 # ===== 抽出プロセッサークラス =====
@@ -44,20 +42,148 @@ class MultiImageExtractor(InformationExtractor):
     def extract(self) -> None:
         """複数画像からの情報抽出を実行"""
         logger.info(f"複数画像での情報抽出を実行: {self.image_id}")
-        extract_information_from_multi_images_with_ocr(self.image_id)
+
+        try:
+            image_data = get_image(self.image_id)
+            if not image_data:
+                logger.error(f"画像 {self.image_id} が見つかりません")
+                update_image_status(self.image_id, "failed")
+                raise ValueError(f"画像 {self.image_id} が見つかりません")
+
+            app_name = image_data.get("app_name", DEFAULT_APP)
+            app_extraction_fields = get_extraction_fields_for_app(app_name)
+            field_names = get_field_names_for_app(app_name)
+            custom_prompt = get_custom_prompt_for_app(app_name)
+
+            logger.info(
+                f"処理アプリ: {app_name}, フィールド数: {len(app_extraction_fields.get('fields', []))}")
+
+            converted_s3_keys = image_data.get("converted_s3_key", [])
+
+            if not converted_s3_keys:
+                raise ValueError("変換済み画像が見つかりません")
+
+            if not isinstance(converted_s3_keys, list):
+                converted_s3_keys = [converted_s3_keys]
+
+            from domains.extraction_engine import get_multipage_ocr_results
+            ocr_results = get_multipage_ocr_results(self.image_id)
+
+            if not ocr_results:
+                raise ValueError("OCR結果が見つかりません")
+
+            page_images = []
+            content_type = 'image/jpeg'
+            for s3_key in converted_s3_keys:
+                try:
+                    s3_response = s3_client.get_object(
+                        Bucket=settings.BUCKET_NAME,
+                        Key=s3_key
+                    )
+                    image_bytes = s3_response['Body'].read()
+                    page_images.append(image_bytes)
+                    if len(page_images) == 1:
+                        content_type = s3_response.get(
+                            'ContentType', 'image/jpeg')
+                except Exception as s3_error:
+                    logger.error(f"S3画像取得エラー {s3_key}: {str(s3_error)}")
+                    continue
+
+            if not page_images:
+                raise ValueError("画像データを取得できませんでした")
+
+            result = extract_information_from_multi_images_with_ocr(
+                page_images=page_images,
+                content_type=content_type,
+                ocr_results=ocr_results,
+                app_extraction_fields=app_extraction_fields,
+                field_names=field_names,
+                custom_prompt=custom_prompt
+            )
+
+            update_extracted_info(
+                self.image_id,
+                result["extracted_info"],
+                result["mapping"],
+                'completed'
+            )
+            update_image_status(self.image_id, "completed")
+
+            logger.info(f"複数画像情報抽出完了: {self.image_id}")
+
+        except Exception as e:
+            logger.error(f"複数画像情報抽出エラー: {str(e)}")
+            update_image_status(self.image_id, "failed")
+            raise
 
 
 class SingleImageExtractor(InformationExtractor):
     """単一画像情報抽出プロセッサー"""
 
     def extract(self) -> None:
-        """従来の情報抽出（individual/単一画像共通）（統一版）"""
+        """単一画像からの情報抽出を実行"""
         logger.info(f"単一画像での情報抽出を実行: {self.image_id}")
-        extract_information_from_single_image_with_ocr(self.image_id)
+
+        try:
+            image_data = get_image(self.image_id)
+            if not image_data:
+                logger.error(f"画像 {self.image_id} が見つかりません")
+                update_image_status(self.image_id, "failed")
+                raise ValueError(f"画像 {self.image_id} が見つかりません")
+
+            app_name = image_data.get("app_name", DEFAULT_APP)
+            app_extraction_fields = get_extraction_fields_for_app(app_name)
+            field_names = get_field_names_for_app(app_name)
+            custom_prompt = get_custom_prompt_for_app(app_name)
+
+            logger.info(
+                f"処理アプリ: {app_name}, フィールド数: {len(app_extraction_fields.get('fields', []))}")
+
+            ocr_result = image_data.get("ocr_result", {})
+            converted_s3_keys = image_data.get("converted_s3_key", [])
+
+            if not converted_s3_keys:
+                raise ValueError("変換済み画像が見つかりません")
+
+            s3_key = converted_s3_keys[0] if isinstance(
+                converted_s3_keys, list) else converted_s3_keys
+
+            if not s3_key:
+                raise ValueError("有効なS3キーが見つかりません")
+
+            s3_response = s3_client.get_object(
+                Bucket=settings.BUCKET_NAME,
+                Key=s3_key
+            )
+            image_bytes = s3_response['Body'].read()
+            content_type = s3_response.get('ContentType', 'image/jpeg')
+
+            result = extract_information_from_single_image_with_ocr(
+                image_data=image_bytes,
+                content_type=content_type,
+                ocr_result=ocr_result,
+                app_extraction_fields=app_extraction_fields,
+                field_names=field_names,
+                custom_prompt=custom_prompt
+            )
+
+            update_extracted_info(
+                self.image_id,
+                result["extracted_info"],
+                result["mapping"],
+                'completed'
+            )
+            update_image_status(self.image_id, "completed")
+
+            logger.info(f"単一画像情報抽出完了: {self.image_id}")
+
+        except Exception as e:
+            logger.error(f"単一画像情報抽出エラー: {str(e)}")
+            update_image_status(self.image_id, "failed")
+            raise
 
 
 # ===== サービスクラス =====
-
 
 class ExtractionService:
     """情報抽出処理を管理するサービスクラス"""
@@ -68,24 +194,17 @@ class ExtractionService:
     async def get_extraction_result(self, image_id: str) -> Dict[str, Any]:
         """情報抽出結果を取得する"""
         try:
-            # 画像情報を取得
             image_data = get_image(image_id)
 
             if not image_data:
                 logger.warning(f"画像が見つかりません (image_id: {image_id})")
                 raise ValueError("画像が見つかりません")
 
-            # アプリ名を取得（なければデフォルト）
             app_name = image_data.get("app_name", DEFAULT_APP)
-
-            # アプリの表示名を取得
             app_display_name = get_app_display_name(app_name)
-
-            # このアプリ用の抽出フィールド定義を取得
             app_extraction_fields = get_extraction_fields_for_app(app_name)[
                 "fields"]
 
-            # 抽出処理が完了していない場合
             extraction_status = image_data.get("extraction_status")
             if extraction_status != "completed":
                 logger.info(f"抽出処理が完了していません (status: {extraction_status})")
@@ -106,7 +225,6 @@ class ExtractionService:
             logger.info(
                 f"DBから取得したマッピング (型: {type(extraction_mapping)}): {extraction_mapping}")
 
-            # Decimal型をfloat型に変換
             extracted_info = decimal_to_float(extracted_info)
             extraction_mapping = decimal_to_float(extraction_mapping)
 
@@ -131,88 +249,23 @@ class ExtractionService:
         try:
             logger.info(f"情報抽出を開始: {image_id}")
 
-            # 画像データを取得
+            self.extract_information(image_id)
+
+            # 結果を取得
             image_data = get_image(image_id)
-            if not image_data:
-                raise ValueError("Image not found")
+            extracted_info = image_data.get("extracted_info", {})
 
-            # ページ処理モードを確認
-            page_processing_mode = image_data.get(
-                "page_processing_mode", "combined")
-            converted_s3_keys = image_data.get("converted_s3_key")
-
-            # 複数画像かどうかを判定
-            is_multiimage = (
-                page_processing_mode == "combined" and
-                isinstance(converted_s3_keys, list) and
-                len(converted_s3_keys) > 1
-            )
-
-            if is_multiimage:
-                # 複数画像での情報抽出
-                logger.info(f"複数画像情報抽出を実行: {len(converted_s3_keys)}ページ")
-                return await self._extract_information_multiimage(image_id, request.dict())
-            else:
-                # 従来の単一画像での情報抽出
-                logger.info("単一画像情報抽出を実行")
-                return await self._extract_information_single(image_id, request.dict())
+            logger.info(f"情報抽出完了: {image_id}")
+            return {"status": "success", "extracted_info": extracted_info}
 
         except Exception as e:
             logger.error(f"情報抽出エラー: {str(e)}")
             update_image_status(image_id, "failed")
             raise
 
-    async def _extract_information_multiimage(self, image_id: str, extraction_data: dict) -> Dict[str, Any]:
-        """複数画像での情報抽出処理"""
-        try:
-            # 状態を更新
-            update_image_status(image_id, "processing")
-
-            # extraction.pyの関数を直接呼び出し
-            extract_information_from_multi_images_with_ocr(image_id)
-
-            # 結果を取得
-            image_data = get_image(image_id)
-            extracted_info = image_data.get("extracted_info", {})
-
-            logger.info(f"複数画像情報抽出完了: {image_id}")
-            return {"status": "success", "extracted_info": extracted_info}
-
-        except Exception as e:
-            logger.error(f"複数画像情報抽出エラー: {str(e)}")
-            update_image_status(image_id, "failed")
-            raise
-
-    async def _extract_information_single(self, image_id: str, extraction_data: dict) -> Dict[str, Any]:
-        """単一画像での情報抽出処理"""
-        try:
-            # 状態を更新
-            update_image_status(image_id, "processing")
-
-            # OCR結果を取得
-            image_data = get_image(image_id)
-            ocr_result = image_data.get("ocr_result", {})
-            ocr_text = ocr_result.get("text", "")
-
-            # extraction.pyの関数を直接呼び出し（統一版）
-            extract_information_from_single_image_with_ocr(image_id)
-
-            # 結果を取得
-            updated_image_data = get_image(image_id)
-            extracted_info = updated_image_data.get("extracted_info", {})
-
-            logger.info(f"単一画像情報抽出完了: {image_id}")
-            return {"status": "success", "extracted_info": extracted_info}
-
-        except Exception as e:
-            logger.error(f"単一画像情報抽出エラー: {str(e)}")
-            update_image_status(image_id, "failed")
-            raise
-
     async def get_extraction_status(self, image_id: str) -> Dict[str, Any]:
         """情報抽出のステータスを取得する"""
         try:
-            # 画像情報を取得
             image_data = get_image(image_id)
 
             if not image_data:
@@ -223,14 +276,9 @@ class ExtractionService:
             logger.error(f"Error getting extraction status: {str(e)}")
             raise
 
-        except Exception as e:
-            logger.error(f"Error getting extraction status: {str(e)}")
-            raise
-
     async def update_extraction_result(self, image_id: str, edited_data: dict) -> None:
         """情報抽出結果を更新する"""
         try:
-            # 抽出情報を更新
             extracted_info = edited_data.get("extracted_info", {})
             mapping = edited_data.get("mapping", {})
 
@@ -243,20 +291,16 @@ class ExtractionService:
             raise
 
     def extract_information(self, image_id: str) -> None:
-        """OCR結果から情報抽出のみを実行（新設計）"""
+        """OCR結果から情報抽出を実行"""
         try:
             logger.info(
                 f"Starting information extraction for image {image_id}")
 
-            # 画像データを取得（処理を実行）
             image_data = get_image(image_id)
             if not image_data:
                 raise ValueError(f"Image not found: {image_id}")
 
-            # 抽出モード判定
             extractor = self._get_extractor(image_id, image_data)
-
-            # 情報抽出実行
             extractor.extract()
 
             logger.info(
@@ -264,14 +308,10 @@ class ExtractionService:
 
         except Exception as e:
             logger.error(f"Error during information extraction: {str(e)}")
-            # エラー時は状態更新しない（各関数内で処理済み）
             raise
 
     def _get_extractor(self, image_id: str, image_data: dict):
-        """処理モードに応じた抽出器を返す（画像の種類と処理モードに応じて判定）"""
-        # クラスは同じファイル内に定義済み
-
-        # 複数画像（combinedモード）かどうかを判定（処理を実行）
+        """処理モードに応じた抽出器を返す"""
         page_processing_mode = image_data.get(
             "page_processing_mode", "combined")
         converted_s3_keys = image_data.get("converted_s3_key")
@@ -282,7 +322,6 @@ class ExtractionService:
             len(converted_s3_keys) > 1
         )
 
-        # 抽出器選択（処理モードに応じて選択）
         if is_multiimage_combined:
             return MultiImageExtractor(image_id, image_data)
         else:
