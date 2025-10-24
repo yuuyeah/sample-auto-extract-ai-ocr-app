@@ -29,9 +29,28 @@ def get_aws_credentials() -> dict[str, str]:
     return credentials
 
 
+def get_uv_environment() -> dict[str, str]:
+    """Get UV environment with AWS credentials"""
+    aws_creds = get_aws_credentials()
+    return {
+        "UV_NO_CACHE": "1",
+        "UV_PYTHON": "/usr/local/bin/python",
+        "UV_TOOL_DIR": "/tmp/.uv/tool",
+        "UV_TOOL_BIN_DIR": "/tmp/.uv/tool/bin",
+        "UV_PROJECT_ENVIRONMENT": "/tmp/.venv",
+        "npm_config_cache": "/tmp/.npm",
+        **aws_creds,
+    }
+
+
 def get_system_prompt(user_system_prompt: str = None) -> str:
     """Combine user system prompt with fixed instructions"""
     fixed_prompt = """あなたはOCR抽出結果を検証し、誤りを修正するアシスタントです。
+
+## 重要な制約
+- 与えられたツールのみを使用してください
+- 存在しないツールや機能を使用しないでください
+- 修正提案は必ずツールを使用した検証結果に基づいてください
 
 ## 出力形式
 修正が必要な場合のみ、以下のJSON形式で出力してください：
@@ -42,7 +61,8 @@ def get_system_prompt(user_system_prompt: str = None) -> str:
       "original_value": "元の値",
       "suggested_value": "修正後の値",
       "reason": "修正理由",
-      "confidence": "high"
+      "confidence": "high",
+      "tool_used": "使用したツール名（必須）"
     }
   ]
 }

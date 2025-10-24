@@ -33,21 +33,17 @@ def register_tools_to_dynamodb():
         table = dynamodb.Table(tools_table_name)
         
         agent_manager = AgentManager()
-        tools = agent_manager.tool_manager.get_all_tools()
+        tool_info_list = agent_manager.tool_manager.get_tool_info_for_registration()
         
-        for tool in tools:
-            tool_name = getattr(tool, '__name__', str(tool))
-            tool_doc = getattr(tool, '__doc__', '') or ''
-            description = tool_doc.strip().split('\n')[0] if tool_doc else ''
-            
+        for tool_info in tool_info_list:
             table.put_item(Item={
-                'tool_name': tool_name,
-                'description': description,
+                'tool_name': tool_info['name'],
+                'description': tool_info['description'],
                 'registered_at': datetime.utcnow().isoformat(),
             })
-            logger.info(f"Registered tool: {tool_name}")
+            logger.info(f"Registered tool: {tool_info['name']}")
         
-        logger.info(f"Successfully registered {len(tools)} tools to DynamoDB")
+        logger.info(f"Successfully registered {len(tool_info_list)} tools to DynamoDB")
     
     except Exception as e:
         logger.error(f"Error registering tools to DynamoDB: {e}")
