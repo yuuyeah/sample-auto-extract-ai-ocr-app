@@ -11,6 +11,7 @@ class Settings:
     # DynamoDB設定
     IMAGES_TABLE_NAME: str = os.getenv("IMAGES_TABLE_NAME", "")
     JOBS_TABLE_NAME: str = os.getenv("JOBS_TABLE_NAME", "")
+    TOOLS_TABLE_NAME: str = os.getenv("TOOLS_TABLE_NAME", "")
 
     # 機能フラグ
     ENABLE_OCR: bool = os.getenv("ENABLE_OCR", "true").lower() == "true"
@@ -28,6 +29,9 @@ class Settings:
 
     # API設定
     API_BASE_URL: str = os.getenv("API_BASE_URL", "")
+    
+    # Agent設定
+    AGENT_RUNTIME_ARN: str = os.getenv("AGENT_RUNTIME_ARN", "")
 
 
 # グローバル設定インスタンス

@@ -42,11 +42,13 @@ export interface ApiProps {
   imagesTable: Table;
   jobsTable: Table;
   schemasTable: Table;
+  toolsTable?: Table;
   userPoolId: string;
   userPoolClientId: string;
   enableOcr: boolean;
   sagemakerEndpointName?: string;
   sagemakerInferenceComponentName?: string;
+  agentRuntimeArn?: string;
 }
 
 export class Api extends Construct {
@@ -141,6 +143,7 @@ export class Api extends Construct {
           imagesTable.tableArn,
           jobsTable.tableArn,
           props.schemasTable.tableArn,
+          ...(props.toolsTable ? [props.toolsTable.tableArn] : []),
           `${imagesTable.tableArn}/index/*`, // GSIへのアクセス権限も追加
         ],
       })
@@ -158,12 +161,14 @@ export class Api extends Construct {
         IMAGES_TABLE_NAME: imagesTable.tableName,
         JOBS_TABLE_NAME: jobsTable.tableName,
         SCHEMAS_TABLE_NAME: props.schemasTable.tableName,
+        TOOLS_TABLE_NAME: props.toolsTable?.tableName || "",
         ENABLE_OCR: props.enableOcr.toString(),
         SAGEMAKER_ENDPOINT_NAME: props.sagemakerEndpointName || "",
         SAGEMAKER_INFERENCE_COMPONENT_NAME:
           props.sagemakerInferenceComponentName || "",
         MODEL_ID: modelId,
         MODEL_REGION: modelRegion,
+        AGENT_RUNTIME_ARN: props.agentRuntimeArn || "",
         PORT: "8080",
         // Lambda Web Adapter関連の環境変数
         AWS_LWA_PORT: "8080",
@@ -171,6 +176,16 @@ export class Api extends Construct {
       },
       role: lambdaRole,
     });
+
+    // AgentRuntime呼び出し権限
+    if (props.agentRuntimeArn) {
+      lambdaFunction.addToRolePolicy(
+        new PolicyStatement({
+          actions: ["bedrock-agentcore:InvokeAgentRuntime"],
+          resources: [props.agentRuntimeArn, props.agentRuntimeArn + "/*"],
+        })
+      );
+    }
 
     // Cognitoユーザープール参照
     const userPool = UserPool.fromUserPoolId(

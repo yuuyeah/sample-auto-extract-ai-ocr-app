@@ -192,3 +192,78 @@ def delete_jobs_by_app_name(app_name: str):
     except Exception as e:
         logger.error(f"ジョブデータ削除エラー (app_name: {app_name}): {str(e)}")
         return False
+
+
+def create_agent_job(image_id: str):
+    """Create agent correction job
+
+    Args:
+        image_id: Image ID
+
+    Returns:
+        str: Job ID
+    """
+    job_id = str(uuid.uuid4())
+    table = get_jobs_table()
+    current_time = datetime.now().isoformat()
+
+    try:
+        item = {
+            "id": job_id,
+            "image_id": image_id,
+            "job_type": "agent_correction",
+            "status": "processing",
+            "created_at": current_time,
+            "updated_at": current_time
+        }
+        table.put_item(Item=item)
+        return job_id
+    except Exception as e:
+        logger.error(f"Error creating agent job: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Database error: {str(e)}")
+
+
+def update_agent_job(job_id: str, status: str, suggestions: list = None, error: str = None):
+    """Update agent correction job
+
+    Args:
+        job_id: Job ID
+        status: Job status (processing, completed, failed)
+        suggestions: Correction suggestions
+        error: Error message if failed
+    """
+    table = get_jobs_table()
+    current_time = datetime.now().isoformat()
+
+    try:
+        update_expr = "SET #status = :status, updated_at = :updated_at"
+        expr_attr_names = {"#status": "status"}
+        expr_attr_values = {
+            ":status": status,
+            ":updated_at": current_time
+        }
+
+        if status == "completed":
+            update_expr += ", completed_at = :completed_at"
+            expr_attr_values[":completed_at"] = current_time
+
+            if suggestions is not None:
+                update_expr += ", suggestions = :suggestions"
+                expr_attr_values[":suggestions"] = suggestions
+
+        if error:
+            update_expr += ", #error = :error"
+            expr_attr_names["#error"] = "error"
+            expr_attr_values[":error"] = error
+
+        table.update_item(
+            Key={"id": job_id},
+            UpdateExpression=update_expr,
+            ExpressionAttributeNames=expr_attr_names,
+            ExpressionAttributeValues=expr_attr_values
+        )
+    except Exception as e:
+        logger.error(f"Error updating agent job: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Database error: {str(e)}")

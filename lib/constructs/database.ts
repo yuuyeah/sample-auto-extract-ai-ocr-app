@@ -2,16 +2,12 @@ import { Construct } from "constructs";
 import { RemovalPolicy, CfnOutput } from "aws-cdk-lib";
 import { AttributeType, BillingMode, Table } from "aws-cdk-lib/aws-dynamodb";
 
-export interface DatabaseProps {
-  // DynamoDB は VPC 不要なので props は空でも良い
-}
-
 export class Database extends Construct {
   public readonly imagesTable: Table;
   public readonly jobsTable: Table;
   public readonly schemasTable: Table;
 
-  constructor(scope: Construct, id: string, props: DatabaseProps = {}) {
+  constructor(scope: Construct, id: string) {
     super(scope, id);
 
     // 画像情報を保存するテーブル
