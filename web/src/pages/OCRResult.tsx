@@ -602,7 +602,7 @@ function OcrResult() {
       return [];
     }
   };
-  
+
   // 抽出ステータスの確認
   const checkExtractionStatus = async () => {
     if (!id) return;
@@ -960,6 +960,9 @@ function OcrResult() {
                   onHighlightField={highlightField}
                   onHighlightCell={highlightTableCell}
                   onUpdateExtractedInfo={updateExtractedInfo}
+                  onRunAgent={runAgent}
+                  agentStatus={agentStatus}
+                  onGetTools={getTools}
                 />
               )}
             </div>
