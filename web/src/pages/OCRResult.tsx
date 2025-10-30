@@ -1,16 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import api, { runAgent as apiRunAgent, getAgentTools } from "../utils/api";
+import api from "../utils/api";
 import { OcrWord, OcrBoundingBox, OcrResponse, PresignedDownloadUrlResponse } from "../types/ocr";
 import { ExtractionResponse, ExtractionMapping } from "../types/extraction";
 import { Field } from "../types/app-schema";
-import { Suggestion, Tool } from "../types/agent";
 import { isOcrEnabled } from "../config";
 import ImagePreview from "../components/ImagePreview";
 import OcrResultEditor from "../components/OcrResultEditor";
 import ExtractionStatusDisplay from "../components/ExtractionStatusDisplay";
 import ExtractedInfoDisplay from "../components/ExtractedInfoDisplay";
-import Toast from "../components/Toast";
+import Toast from "../components/Toast"; // 新しいトーストコンポーネント
 
 const styles = {
   container: "p-4 w-full h-screen overflow-hidden",
@@ -67,7 +66,6 @@ function OcrResult() {
     message: '',
     type: 'success'
   });
-  const [agentStatus, setAgentStatus] = useState<'idle' | 'running' | 'completed'>('idle');
   let statusCheckTimer: NodeJS.Timeout | null = null;
 
   // 現在のページのバウンディングボックスを生成
@@ -561,48 +559,6 @@ function OcrResult() {
   const closeToast = () => {
     setToast(prev => ({ ...prev, show: false }));
   };
-
-  // エージェント実行
-  const runAgent = async (): Promise<Suggestion[]> => {
-    if (!id) return [];
-
-    try {
-      setAgentStatus('running');
-      console.log("エージェント実行中...");
-      console.log("検証対象データ:", extractedInfo);
-      
-      const response = await apiRunAgent(id);
-      
-      setAgentStatus('completed');
-      console.log("エージェント実行完了:", response);
-      console.log("APIレスポンス詳細:", JSON.stringify(response, null, 2));
-      
-      if (response.suggestions.length > 0) {
-        showToast(`${response.suggestions.length}件の修正提案があります`, 'info');
-      } else {
-        showToast('問題は検出されませんでした', 'success');
-      }
-      
-      return response.suggestions;
-    } catch (error) {
-      console.error("エージェント実行エラー:", error);
-      setAgentStatus('idle');
-      showToast('エージェント実行に失敗しました', 'error');
-      return [];
-    }
-  };
-
-  // ツール一覧取得
-  const getTools = async (): Promise<Tool[]> => {
-    try {
-      const response = await getAgentTools();
-      return response.tools || [];
-    } catch (error) {
-      console.error("ツール取得エラー:", error);
-      showToast('ツール情報の取得に失敗しました', 'error');
-      return [];
-    }
-  };
   
   // 抽出ステータスの確認
   const checkExtractionStatus = async () => {
@@ -961,9 +917,6 @@ function OcrResult() {
                   onHighlightField={highlightField}
                   onHighlightCell={highlightTableCell}
                   onUpdateExtractedInfo={updateExtractedInfo}
-                  onRunAgent={runAgent}
-                  agentStatus={agentStatus}
-                  onGetTools={getTools}
                 />
               )}
             </div>
