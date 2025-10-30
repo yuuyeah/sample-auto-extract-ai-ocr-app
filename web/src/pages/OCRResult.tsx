@@ -67,7 +67,6 @@ function OcrResult() {
     message: '',
     type: 'success'
   });
-
   const [agentStatus, setAgentStatus] = useState<'idle' | 'running' | 'completed'>('idle');
   let statusCheckTimer: NodeJS.Timeout | null = null;
 
@@ -562,7 +561,7 @@ function OcrResult() {
   const closeToast = () => {
     setToast(prev => ({ ...prev, show: false }));
   };
-  
+
   // エージェント実行
   const runAgent = async (): Promise<Suggestion[]> => {
     if (!id) return [];
@@ -581,7 +580,7 @@ function OcrResult() {
       } else {
         showToast('問題は検出されませんでした', 'success');
       }
-
+      
       return response.suggestions;
     } catch (error) {
       console.error("エージェント実行エラー:", error);

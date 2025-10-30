@@ -83,7 +83,7 @@ export const runAgent = async (imageId: string) => {
   // Start agent job
   const startResponse = await api.post(`/ocr/agent/${imageId}`);
   const jobId = startResponse.data.jobId;
-
+  
   // Poll for completion
   return pollAgentJobStatus(jobId);
 };
@@ -108,7 +108,7 @@ export const pollAgentJobStatus = async (
     // Wait before next poll
     await new Promise((resolve) => setTimeout(resolve, interval));
   }
-
+  
   throw new Error('Agent processing timed out');
 };
 
@@ -116,6 +116,5 @@ export const getAgentTools = async () => {
   const response = await api.get('/ocr/agent/tools');
   return response.data;
 };
-
 
 export default api;
