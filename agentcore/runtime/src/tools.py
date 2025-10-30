@@ -54,7 +54,7 @@ class ToolManager:
                                 )
                             )
                         )
-                        client.start()
+                        # client.start() を削除 - これが競合の原因
                         mcp_clients.append(client)
                         logger.info(f"Loaded MCP server: {server_name}")
                     except Exception as e:

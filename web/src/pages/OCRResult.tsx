@@ -569,11 +569,13 @@ function OcrResult() {
     try {
       setAgentStatus('running');
       console.log("エージェント実行中...");
+      console.log("検証対象データ:", extractedInfo);
       
       const response = await apiRunAgent(id);
       
       setAgentStatus('completed');
       console.log("エージェント実行完了:", response);
+      console.log("APIレスポンス詳細:", JSON.stringify(response, null, 2));
       
       if (response.suggestions.length > 0) {
         showToast(`${response.suggestions.length}件の修正提案があります`, 'info');

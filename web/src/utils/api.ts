@@ -80,9 +80,13 @@ api.interceptors.response.use(
 
 // Agent API
 export const runAgent = async (imageId: string) => {
+  console.log(`エージェント実行開始: imageId=${imageId}`);
+  
   // Start agent job
   const startResponse = await api.post(`/ocr/agent/${imageId}`);
   const jobId = startResponse.data.jobId;
+  
+  console.log(`エージェントジョブ開始: jobId=${jobId}`);
   
   // Poll for completion
   return pollAgentJobStatus(jobId);
@@ -93,15 +97,21 @@ export const pollAgentJobStatus = async (
   maxAttempts = 60,
   interval = 2000
 ): Promise<any> => {
+  console.log(`エージェントジョブ ${jobId} のポーリング開始`);
+  
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const response = await api.get(`/ocr/agent/status/${jobId}`);
     const { status, suggestions, error } = response.data;
     
+    console.log(`ポーリング試行 ${attempt + 1}: ステータス=${status}, 提案数=${suggestions?.length || 0}`);
+    
     if (status === 'completed') {
+      console.log('エージェント処理完了:', { status, suggestions });
       return { status: 'success', suggestions };
     }
     
     if (status === 'failed') {
+      console.error('エージェント処理失敗:', error);
       throw new Error(error || 'Agent processing failed');
     }
     
