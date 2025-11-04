@@ -13,6 +13,9 @@ export class OcrAppStack extends cdk.Stack {
 
     // OCR有効フラグを取得（デフォルトはtrue）
     const enableOcr = this.node.tryGetContext("enable_ocr") ?? true;
+    
+    // OCRエンジンを取得（デフォルトはpaddle）
+    const ocrEngine = this.node.tryGetContext("ocr_engine") ?? "paddle";
 
     const auth = new Auth(this, "Auth");
 
@@ -21,7 +24,9 @@ export class OcrAppStack extends cdk.Stack {
     // OCRが有効な場合のみSageMakerエンドポイントを作成
     let ocrEndpoint = undefined;
     if (enableOcr) {
-      const ocr = new Ocr(this, "OcrEndpoint");
+      const ocr = new Ocr(this, "OcrEndpoint", {
+        ocrEngine: ocrEngine as "paddle" | "yomitoku" | "deepseek"
+      });
       ocrEndpoint = ocr;
     }
 
