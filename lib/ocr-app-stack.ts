@@ -16,6 +16,9 @@ export class OcrAppStack extends cdk.Stack {
     // OCR有効フラグを取得（デフォルトはtrue）
     const enableOcr = this.node.tryGetContext("enable_ocr") ?? true;
 
+    // OCRエンジンを取得（デフォルトはpaddle）
+    const ocrEngine = this.node.tryGetContext("ocr_engine") ?? "paddle";
+
     // Agent有効フラグを取得（デフォルトはfalse）
     const enableAgent = this.node.tryGetContext("enable_agent") ?? false;
     const enableAgentDemo =
@@ -28,12 +31,15 @@ export class OcrAppStack extends cdk.Stack {
     // OCRが有効な場合のみSageMakerエンドポイントを作成
     let ocrEndpoint = undefined;
     if (enableOcr) {
-      const enableZeroScale = this.node.tryGetContext("sagemaker_zero_scale") ?? true;
-      const scaleInCooldownSeconds = this.node.tryGetContext("sagemaker_scale_in_cooldown_seconds") ?? 3600;
+      const enableZeroScale =
+        this.node.tryGetContext("sagemaker_zero_scale") ?? true;
+      const scaleInCooldownSeconds =
+        this.node.tryGetContext("sagemaker_scale_in_cooldown_seconds") ?? 3600;
 
       const ocr = new Ocr(this, "OcrEndpoint", {
         enableZeroScale: enableZeroScale,
         scaleInCooldownSeconds: scaleInCooldownSeconds,
+        ocrEngine: ocrEngine as "paddle" | "yomitoku" | "deepseek",
       });
       ocrEndpoint = ocr;
     }

@@ -35,6 +35,17 @@ AutoExtract は OCR + Bedrock を活用した帳票読み取りの AI-OCR ソリ
 "model_region": "us-east-1",
 ```
 
+#### OCR エンジンの変更
+
+`cdk.json` にて、使用する OCR エンジンを指定することができます。
+
+```
+"ocr_engine": "paddle",  // "paddle" または "yomitoku"
+```
+
+- `paddle`: PaddleOCR（デフォルト）
+- `yomitoku`: Yomitoku（高精度日本語OCR、CC BY-NC-SA 4.0ライセンス）
+
 ### CDK による AWS リソースのデプロイ
 
 CDK デプロイの際に必要な依存パッケージのインストールします。
