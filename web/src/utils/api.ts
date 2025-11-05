@@ -104,7 +104,7 @@ export const pollAgentJobStatus = async (
     if (status === 'failed') {
       throw new Error(error || 'Agent processing failed');
     }
-
+    
     // Wait before next poll
     await new Promise((resolve) => setTimeout(resolve, interval));
   }

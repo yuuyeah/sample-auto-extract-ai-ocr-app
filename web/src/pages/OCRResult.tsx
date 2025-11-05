@@ -601,7 +601,7 @@ function OcrResult() {
       return [];
     }
   };
-
+  
   // 抽出ステータスの確認
   const checkExtractionStatus = async () => {
     if (!id) return;
