@@ -569,12 +569,12 @@ function OcrResult() {
     try {
       setAgentStatus('running');
       console.log("エージェント実行中...");
-
+      
       const response = await apiRunAgent(id);
-
+      
       setAgentStatus('completed');
       console.log("エージェント実行完了:", response);
-
+      
       if (response.suggestions.length > 0) {
         showToast(`${response.suggestions.length}件の修正提案があります`, 'info');
       } else {
@@ -601,7 +601,7 @@ function OcrResult() {
       return [];
     }
   };
-  
+
   // 抽出ステータスの確認
   const checkExtractionStatus = async () => {
     if (!id) return;

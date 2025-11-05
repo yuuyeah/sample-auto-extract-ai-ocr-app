@@ -96,15 +96,15 @@ export const pollAgentJobStatus = async (
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const response = await api.get(`/ocr/agent/status/${jobId}`);
     const { status, suggestions, error } = response.data;
-
+    
     if (status === 'completed') {
       return { status: 'success', suggestions };
     }
-
+    
     if (status === 'failed') {
       throw new Error(error || 'Agent processing failed');
     }
-    
+
     // Wait before next poll
     await new Promise((resolve) => setTimeout(resolve, interval));
   }
