@@ -54,7 +54,6 @@ class ToolManager:
                                 )
                             )
                         )
-                        # client.start() を削除 - これが競合の原因
                         mcp_clients.append(client)
                         logger.info(f"Loaded MCP server: {server_name}")
                     except Exception as e:
@@ -125,13 +124,150 @@ class ToolManager:
         
         return [search_customer_by_id, search_customer_by_name]
     
+    def get_calculation_verification_tools(self) -> list[Any]:
+        """Get calculation verification tools"""
+        
+        @tool
+        def verify_unit_price_calculation(
+            quantity: float,
+            unit_price: float,
+            actual_amount: float,
+            tolerance: float = 0.01
+        ) -> dict:
+            """単価×個数の計算を検証
+            
+            Args:
+                quantity: 数量
+                unit_price: 単価
+                actual_amount: 実際の金額
+                tolerance: 許容誤差（デフォルト0.01）
+                
+            Returns:
+                検証結果 {"is_correct": bool, "calculated_amount": float, "difference": float, "message": str}
+            """
+            try:
+                calculated_amount = quantity * unit_price
+                difference = abs(calculated_amount - actual_amount)
+                is_correct = difference <= tolerance
+                
+                result = {
+                    "is_correct": is_correct,
+                    "calculated_amount": calculated_amount,
+                    "actual_amount": actual_amount,
+                    "difference": difference,
+                    "calculation": f"{quantity} × {unit_price} = {calculated_amount}"
+                }
+                
+                if is_correct:
+                    result["message"] = "計算は正しいです"
+                else:
+                    result["message"] = f"計算が間違っています。{quantity} × {unit_price} = {calculated_amount}"
+                
+                logger.info(f"単価×個数検算: {quantity} × {unit_price} = {calculated_amount}, 実際: {actual_amount}, 正しい: {is_correct}")
+                return result
+                
+            except Exception as e:
+                logger.error(f"単価×個数検算エラー: {e}")
+                return {"error": str(e)}
+        
+        @tool
+        def verify_subtotal_calculation(
+            amounts: list[float],
+            actual_subtotal: float,
+            tolerance: float = 0.01
+        ) -> dict:
+            """各項目の合計と小計の計算を検証
+            
+            Args:
+                amounts: 各項目の金額のリスト
+                actual_subtotal: 実際の小計
+                tolerance: 許容誤差（デフォルト0.01）
+                
+            Returns:
+                検証結果 {"is_correct": bool, "calculated_subtotal": float, "difference": float, "message": str}
+            """
+            try:
+                calculated_subtotal = sum(amounts)
+                difference = abs(calculated_subtotal - actual_subtotal)
+                is_correct = difference <= tolerance
+                
+                result = {
+                    "is_correct": is_correct,
+                    "calculated_subtotal": calculated_subtotal,
+                    "actual_subtotal": actual_subtotal,
+                    "difference": difference,
+                    "calculation": " + ".join([str(amount) for amount in amounts]) + f" = {calculated_subtotal}"
+                }
+                
+                if is_correct:
+                    result["message"] = "小計の計算は正しいです"
+                else:
+                    result["message"] = f"小計が間違っています。各項目の合計: {calculated_subtotal}"
+                
+                logger.info(f"小計検算: {amounts} の合計 = {calculated_subtotal}, 実際: {actual_subtotal}, 正しい: {is_correct}")
+                return result
+                
+            except Exception as e:
+                logger.error(f"小計検算エラー: {e}")
+                return {"error": str(e)}
+        
+        @tool
+        def verify_total_with_tax_calculation(
+            subtotal: float,
+            tax_amount: float,
+            actual_total: float,
+            tolerance: float = 0.01
+        ) -> dict:
+            """小計+消費税と総額の計算を検証
+            
+            Args:
+                subtotal: 小計
+                tax_amount: 消費税額
+                actual_total: 実際の総額
+                tolerance: 許容誤差（デフォルト0.01）
+                
+            Returns:
+                検証結果 {"is_correct": bool, "calculated_total": float, "difference": float, "message": str}
+            """
+            try:
+                calculated_total = subtotal + tax_amount
+                difference = abs(calculated_total - actual_total)
+                is_correct = difference <= tolerance
+                
+                result = {
+                    "is_correct": is_correct,
+                    "calculated_total": calculated_total,
+                    "actual_total": actual_total,
+                    "difference": difference,
+                    "calculation": f"{subtotal} + {tax_amount} = {calculated_total}"
+                }
+                
+                if is_correct:
+                    result["message"] = "総額の計算は正しいです"
+                else:
+                    result["message"] = f"総額が間違っています。{subtotal} + {tax_amount} = {calculated_total}"
+                
+                logger.info(f"総額検算: {subtotal} + {tax_amount} = {calculated_total}, 実際: {actual_total}, 正しい: {is_correct}")
+                return result
+                
+            except Exception as e:
+                logger.error(f"総額検算エラー: {e}")
+                return {"error": str(e)}
+        
+        return [
+            verify_unit_price_calculation,
+            verify_subtotal_calculation,
+            verify_total_with_tax_calculation
+        ]
+    
     def get_all_tools(self) -> list[Any]:
         """Get all available tools"""
         mcp_tools = self.load_mcp_tools()
         customer_tools = self.get_customer_search_tools()
+        calculation_tools = self.get_calculation_verification_tools()
         
-        all_tools = mcp_tools + customer_tools
-        logger.info(f"Total tools loaded: {len(all_tools)} (MCP: {len(mcp_tools)}, Custom: {len(customer_tools)})")
+        all_tools = mcp_tools + customer_tools + calculation_tools
+        logger.info(f"Total tools loaded: {len(all_tools)} (MCP: {len(mcp_tools)}, Custom: {len(customer_tools)}, Calculation: {len(calculation_tools)})")
         
         return all_tools
     
@@ -167,5 +303,17 @@ class ToolManager:
                 'description': description
             })
             logger.info(f"Found custom tool: {tool_name}")
+        
+        # 検算ツール
+        calculation_tools = self.get_calculation_verification_tools()
+        for tool in calculation_tools:
+            tool_name = getattr(tool, '__name__', str(tool))
+            tool_doc = getattr(tool, '__doc__', '') or ''
+            description = tool_doc.strip().split('\n')[0] if tool_doc else ''
+            tool_info.append({
+                'name': tool_name,
+                'description': description
+            })
+            logger.info(f"Found calculation tool: {tool_name}")
         
         return tool_info
