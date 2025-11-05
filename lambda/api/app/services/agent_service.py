@@ -151,9 +151,6 @@ class AgentService:
         Returns:
             System prompt string
         """
-        # デバッグ用：データ構造をログ出力
-        logger.info(f"Extracted info structure: {json.dumps(extracted_info, ensure_ascii=False, indent=2)}")
-        
         return f"""あなたはOCR抽出結果を検証し、誤りを修正するアシスタントです。
 
 ## タスク

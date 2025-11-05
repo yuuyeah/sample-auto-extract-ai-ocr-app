@@ -131,16 +131,14 @@ class ToolManager:
         def verify_unit_price_calculation(
             quantity: float,
             unit_price: float,
-            actual_amount: float,
-            tolerance: float = 0.01
+            actual_amount: float
         ) -> dict:
             """単価×個数の計算を検証
             
             Args:
                 quantity: 数量
                 unit_price: 単価
-                amount: 数量 * 単価としてOCRされた金額
-                tolerance: 許容誤差（デフォルト0.01）
+                actual_amount: 実際の金額
                 
             Returns:
                 検証結果 {"is_correct": bool, "calculated_amount": float, "difference": float, "message": str}
@@ -148,7 +146,7 @@ class ToolManager:
             try:
                 calculated_amount = quantity * unit_price
                 difference = abs(calculated_amount - actual_amount)
-                is_correct = difference <= tolerance
+                is_correct = difference == 0
                 
                 result = {
                     "is_correct": is_correct,
@@ -173,15 +171,13 @@ class ToolManager:
         @tool
         def verify_subtotal_calculation(
             amounts: list[float],
-            actual_subtotal: float,
-            tolerance: float = 0.01
+            actual_subtotal: float
         ) -> dict:
             """各項目の合計と小計の計算を検証
             
             Args:
                 amounts: 各項目の金額のリスト
                 actual_subtotal: 実際の小計
-                tolerance: 許容誤差（デフォルト0.01）
                 
             Returns:
                 検証結果 {"is_correct": bool, "calculated_subtotal": float, "difference": float, "message": str}
@@ -189,7 +185,7 @@ class ToolManager:
             try:
                 calculated_subtotal = sum(amounts)
                 difference = abs(calculated_subtotal - actual_subtotal)
-                is_correct = difference <= tolerance
+                is_correct = difference == 0
                 
                 result = {
                     "is_correct": is_correct,
@@ -215,8 +211,7 @@ class ToolManager:
         def verify_total_with_tax_calculation(
             subtotal: float,
             tax_amount: float,
-            actual_total: float,
-            tolerance: float = 0.01
+            actual_total: float
         ) -> dict:
             """小計+消費税と総額の計算を検証
             
@@ -224,7 +219,6 @@ class ToolManager:
                 subtotal: 小計
                 tax_amount: 消費税額
                 actual_total: 実際の総額
-                tolerance: 許容誤差（デフォルト0.01）
                 
             Returns:
                 検証結果 {"is_correct": bool, "calculated_total": float, "difference": float, "message": str}
@@ -232,7 +226,7 @@ class ToolManager:
             try:
                 calculated_total = subtotal + tax_amount
                 difference = abs(calculated_total - actual_total)
-                is_correct = difference <= tolerance
+                is_correct = difference == 0
                 
                 result = {
                     "is_correct": is_correct,
@@ -254,10 +248,62 @@ class ToolManager:
                 logger.error(f"総額検算エラー: {e}")
                 return {"error": str(e)}
         
+        @tool
+        def verify_tax_calculation(
+            subtotal: float,
+            actual_tax_amount: float,
+            tax_rate: float = 0.08
+        ) -> dict:
+            """消費税の計算を検証（端数処理を考慮）
+            
+            Args:
+                subtotal: 小計
+                actual_tax_amount: 実際の消費税額
+                tax_rate: 消費税率（デフォルト8%）
+                
+            Returns:
+                検証結果 {"is_correct": bool, "calculated_tax": float, "difference": float, "message": str}
+            """
+            try:
+                calculated_tax = subtotal * tax_rate
+                difference = abs(calculated_tax - actual_tax_amount)
+                
+                # 消費税計算では端数処理により±1円の誤差が生じる可能性がある
+                # 理論値が小数点以下を含む場合のみ±1円を許容
+                has_decimal = (calculated_tax % 1) != 0
+                tolerance = 1.0 if has_decimal else 0.0
+                
+                is_correct = difference <= tolerance
+                
+                result = {
+                    "is_correct": is_correct,
+                    "calculated_tax": calculated_tax,
+                    "actual_tax_amount": actual_tax_amount,
+                    "difference": difference,
+                    "calculation": f"{subtotal} × {tax_rate} = {calculated_tax}",
+                    "has_decimal": has_decimal
+                }
+                
+                if is_correct:
+                    if has_decimal and difference > 0:
+                        result["message"] = f"消費税の計算は正しいです（端数処理済み: 理論値{calculated_tax}円 → {actual_tax_amount}円）"
+                    else:
+                        result["message"] = "消費税の計算は正しいです"
+                else:
+                    result["message"] = f"消費税が間違っています。{subtotal} × {tax_rate} = {calculated_tax}"
+                
+                logger.info(f"消費税検算: {subtotal} × {tax_rate} = {calculated_tax}, 実際: {actual_tax_amount}, 正しい: {is_correct}")
+                return result
+                
+            except Exception as e:
+                logger.error(f"消費税検算エラー: {e}")
+                return {"error": str(e)}
+        
         return [
             verify_unit_price_calculation,
             verify_subtotal_calculation,
-            verify_total_with_tax_calculation
+            verify_total_with_tax_calculation,
+            verify_tax_calculation
         ]
     
     def get_all_tools(self) -> list[Any]:
