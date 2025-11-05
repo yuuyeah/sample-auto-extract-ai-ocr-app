@@ -139,7 +139,7 @@ class ToolManager:
             Args:
                 quantity: 数量
                 unit_price: 単価
-                actual_amount: 実際の金額
+                amount: 数量 * 単価としてOCRされた金額
                 tolerance: 許容誤差（デフォルト0.01）
                 
             Returns:
