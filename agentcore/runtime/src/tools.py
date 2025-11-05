@@ -339,7 +339,7 @@ class ToolManager:
                 logger.error(f"Error getting MCP tool info: {e}")
         
         # カスタムツール
-        custom_tools = self.get_customer_search_tools()
+        custom_tools = self.get_customer_search_tools() + self.get_calculation_verification_tools()
         for tool in custom_tools:
             tool_name = getattr(tool, '__name__', str(tool))
             tool_doc = getattr(tool, '__doc__', '') or ''
@@ -349,17 +349,3 @@ class ToolManager:
                 'description': description
             })
             logger.info(f"Found custom tool: {tool_name}")
-        
-        # 検算ツール
-        calculation_tools = self.get_calculation_verification_tools()
-        for tool in calculation_tools:
-            tool_name = getattr(tool, '__name__', str(tool))
-            tool_doc = getattr(tool, '__doc__', '') or ''
-            description = tool_doc.strip().split('\n')[0] if tool_doc else ''
-            tool_info.append({
-                'name': tool_name,
-                'description': description
-            })
-            logger.info(f"Found calculation tool: {tool_name}")
-        
-        return tool_info
