@@ -151,12 +151,8 @@ class AgentService:
         Returns:
             System prompt string
         """
-        # DynamoDB形式のデータを通常のJSON形式に変換
-        normalized_info = self._normalize_dynamodb_data(extracted_info)
-        
         # デバッグ用：データ構造をログ出力
-        logger.info(f"Original extracted info: {json.dumps(extracted_info, ensure_ascii=False, indent=2)}")
-        logger.info(f"Normalized extracted info: {json.dumps(normalized_info, ensure_ascii=False, indent=2)}")
+        logger.info(f"Extracted info structure: {json.dumps(extracted_info, ensure_ascii=False, indent=2)}")
         
         return f"""あなたはOCR抽出結果を検証し、誤りを修正するアシスタントです。
 
@@ -164,7 +160,7 @@ class AgentService:
 以下のOCR抽出結果を検証し、誤りがあれば修正してください。
 
 ## OCR抽出結果
-{json.dumps(normalized_info, ensure_ascii=False, indent=2)}
+{json.dumps(extracted_info, ensure_ascii=False, indent=2)}
 
 ## 指示
 - 利用可能なツールを使って、抽出結果の正確性を検証してください
@@ -191,76 +187,6 @@ class AgentService:
   "suggestions": []
 }}
 """
-    
-    def _normalize_dynamodb_data(self, data):
-        """DynamoDB形式のデータを通常のJSON形式に変換
-        
-        Args:
-            data: DynamoDB形式のデータ
-            
-        Returns:
-            通常のJSON形式のデータ
-        """
-        if isinstance(data, dict):
-            # DynamoDB形式の値を変換
-            if len(data) == 1:
-                key, value = next(iter(data.items()))
-                if key == 'S':  # String
-                    # 数値っぽい文字列の場合は数値に変換を試行
-                    cleaned_value = self._clean_numeric_string(value)
-                    if cleaned_value != value:
-                        try:
-                            return float(cleaned_value) if '.' in cleaned_value else int(cleaned_value)
-                        except ValueError:
-                            pass
-                    return value
-                elif key == 'N':  # Number
-                    try:
-                        # 整数として解析を試行
-                        if '.' not in value:
-                            return int(value)
-                        else:
-                            return float(value)
-                    except ValueError:
-                        return value
-                elif key == 'L':  # List
-                    return [self._normalize_dynamodb_data(item) for item in value]
-                elif key == 'M':  # Map
-                    return {k: self._normalize_dynamodb_data(v) for k, v in value.items()}
-                elif key == 'BOOL':  # Boolean
-                    return value
-                elif key == 'NULL':  # Null
-                    return None
-            
-            # 通常の辞書の場合
-            return {k: self._normalize_dynamodb_data(v) for k, v in data.items()}
-        
-        elif isinstance(data, list):
-            return [self._normalize_dynamodb_data(item) for item in data]
-        
-        else:
-            return data
-    
-    def _clean_numeric_string(self, value: str) -> str:
-        """数値文字列からカンマや通貨記号を除去
-        
-        Args:
-            value: 元の文字列
-            
-        Returns:
-            クリーンな数値文字列
-        """
-        if not isinstance(value, str):
-            return value
-        
-        # カンマ、円マーク、スペースを除去
-        cleaned = value.replace(',', '').replace('円', '').replace('¥', '').strip()
-        
-        # 数値のみの文字列かチェック
-        if cleaned.replace('.', '').replace('-', '').isdigit():
-            return cleaned
-        
-        return value
     
 
     def _parse_agent_response(self, response_text: str) -> list[dict]:
