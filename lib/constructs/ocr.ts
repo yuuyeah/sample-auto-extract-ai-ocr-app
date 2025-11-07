@@ -140,7 +140,6 @@ export class Ocr extends Construct {
       executionRoleArn: sagemakerRole.roleArn,
       productionVariants: [
         {
-          modelName: containerMap[ocrEngine],
           variantName: variantName,
           instanceType: instanceType,
           initialInstanceCount: 1,
@@ -158,7 +157,7 @@ export class Ocr extends Construct {
     });
 
     this.endpointName = endpoint.attrEndpointName;
-
+    
     endpoint.addDependency(endpointConfig);
 
     // OCRエンジンに応じたリソース要件
