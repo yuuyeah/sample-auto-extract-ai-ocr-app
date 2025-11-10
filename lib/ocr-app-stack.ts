@@ -39,7 +39,7 @@ export class OcrAppStack extends cdk.Stack {
       const ocr = new Ocr(this, "OcrEndpoint", {
         enableZeroScale: enableZeroScale,
         scaleInCooldownSeconds: scaleInCooldownSeconds,
-        ocrEngine: ocrEngine as "paddle" | "yomitoku" | "deepseek",
+        ocrEngine: ocrEngine as "paddle" | "deepseek"
       });
       ocrEndpoint = ocr;
     }

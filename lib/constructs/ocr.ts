@@ -27,7 +27,7 @@ import * as path from "path";
 
 export interface OcrProps {
   baseName?: string;
-  ocrEngine?: "paddle" | "yomitoku" | "deepseek";
+  ocrEngine?: "paddle" | "deepseek";
   instanceType?: string;
   environment?: Record<string, string>;
   enableZeroScale?: boolean;
@@ -49,8 +49,7 @@ export class Ocr extends Construct {
 
     // OCRエンジンに応じたコンテナパス
     const containerMap = {
-      paddle: "paddle-ocr",
-      yomitoku: "yomitoku", 
+      paddle: "paddle-ocr", 
       deepseek: "deepseek-ocr"
     };
     const containerPath = path.join(
