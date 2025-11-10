@@ -25,7 +25,7 @@ export class OcrAppStack extends cdk.Stack {
     let ocrEndpoint = undefined;
     if (enableOcr) {
       const ocr = new Ocr(this, "OcrEndpoint", {
-        ocrEngine: ocrEngine as "paddle" | "yomitoku" | "deepseek"
+        ocrEngine: ocrEngine as "paddle" | "deepseek"
       });
       ocrEndpoint = ocr;
     }
