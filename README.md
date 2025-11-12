@@ -35,7 +35,7 @@ AutoExtract は OCR + Bedrock を活用した帳票読み取りの AI-OCR ソリ
 "model_region": "us-east-1",
 ```
 
-#### OCR エンジンの変更
+#### 高精度日本語 OCR エンジンへの変更
 
 `cdk.json` にて、使用する OCR エンジンを指定することができます。
 
