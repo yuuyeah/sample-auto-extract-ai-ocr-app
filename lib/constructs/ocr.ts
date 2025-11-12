@@ -32,8 +32,8 @@ export class Ocr extends Construct {
 
     // デフォルト値の設定
     const baseName = props.baseName || "ocr";
-    const instanceType = props.instanceType || "ml.g5.4xlarge";
     const ocrEngine = props.ocrEngine || "paddle";
+    const instanceType = props.instanceType || (ocrEngine === "paddle" ? "ml.g5.2xlarge" : "ml.g5.4xlarge");
 
     // OCRエンジンに応じたコンテナパス
     const containerMap = {
@@ -45,7 +45,7 @@ export class Ocr extends Construct {
       `../../ocr-containers/${containerMap[ocrEngine] || ocrEngine}`
     );
 
-    const variantName = "primary";
+    const variantName = "AllTraffic";
     this.inferenceComponentName = `${baseName}-inference-component`;
 
     // OCRエンジン用のデフォルト環境変数
@@ -148,14 +148,14 @@ export class Ocr extends Construct {
     endpoint.addDependency(endpointConfig);
 
     // OCRエンジンに応じたリソース要件
-    let cpuCores = 2;
-    let memoryMb = 8192;
+    let cpuCores = 1;
+    let memoryMb = 4096;
     let acceleratorDevices = 1;
     
     if (ocrEngine === "deepseek") {
-      cpuCores = 8; // ml.g5.4xlargeの半分のCPUを使用
-      memoryMb = 42768; // 32GB (64GBの半分を使用)
-      acceleratorDevices = 1; // A10G GPU 1つ
+      cpuCores = 8;
+      memoryMb = 42768;
+      acceleratorDevices = 1;
     }
 
     const inferenceComponent = new CfnInferenceComponent(
