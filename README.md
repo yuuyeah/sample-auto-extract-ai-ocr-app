@@ -35,7 +35,7 @@ AutoExtract は OCR + Bedrock を活用した帳票読み取りの AI-OCR ソリ
 "model_region": "us-east-1",
 ```
 
-#### 高精度日本語 OCR エンジンへの変更
+#### OCR エンジンへの変更(PaddleOCR or DeepSeek OCR)
 
 `cdk.json` にて、使用する OCR エンジンを指定することができます。
 
@@ -76,9 +76,9 @@ cdk deploy
 cdk destroy
 ```
 
-## OCR エンジンの変更
+## 高精度日本語 OCR エンジンへの変更
 
-デフォルトでは OCR エンジンとして PaddleOCR を利用していますが、高精度の日本語 OCR エンジン「Yomitoku」や 「DeepSeek OCR」に切り替えることも可能です。Yomitokuの場合は、[AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-64qkuwrqi4lhi) からサブスクライブした後、利用することが可能です。利用方法としては、[ocr.py](lambda/api/app/ocr.py#L36) における SageMaker Endpoint の呼び出しにおいて、Yomitoku の SageMaker Endpoint を指定します。また、[Inference Component](lambda/api/app/ocr.py#L40) の記述をコメントアウトする必要があります。DeepSeek OCR に切り替えたい場合は、[OCR エンジンの変更](#ocr-エンジンの変更) をご参照ください。
+デフォルトでは OCR エンジンとして PaddleOCR を利用していますが、高精度の日本語 OCR エンジン「Yomitoku」に切り替えることも可能です。Yomitokuの場合は、[AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-64qkuwrqi4lhi) からサブスクライブした後、利用することが可能です。利用方法としては、[ocr.py](lambda/api/app/ocr.py#L36) における SageMaker Endpoint の呼び出しにおいて、Yomitoku の SageMaker Endpoint を指定します。また、[Inference Component](lambda/api/app/ocr.py#L40) の記述をコメントアウトする必要があります。DeepSeek OCR に切り替えたい場合は、[OCR エンジンへの変更(PaddleOCR or DeepSeek OCR)](#ocr-エンジンへの変更paddleocr-or-deepseek-ocr) をご参照ください。
 
 また、GitHub で公開されている [Yomitoku](https://github.com/kotaro-kinoshita/yomitoku) を利用して、本サンプルを動作させることも可能です。実装例については[こちら](https://github.com/gteu/sample-auto-extract-ai-ocr-app)を参照してください。
 
