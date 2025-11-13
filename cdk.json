@@ -24,7 +24,7 @@
     "enable_agent_demo": false,
     "sagemaker_zero_scale": true,
     "sagemaker_scale_in_cooldown_seconds": 3600,
-    "ocr_engine": "deepseek",
+    "ocr_engine": "paddle",
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
     "@aws-cdk/core:checkSecretUsage": true,
     "@aws-cdk/core:target-partitions": [
