@@ -17,7 +17,7 @@ import * as path from "path";
 
 export interface OcrProps {
   baseName?: string;
-  ocrEngine?: "paddle";
+  ocrEngine?: "paddle" | "deepseek";
   instanceType?: string;
   environment?: Record<string, string>;
 }
@@ -32,23 +32,40 @@ export class Ocr extends Construct {
 
     // デフォルト値の設定
     const baseName = props.baseName || "ocr";
-    const instanceType = props.instanceType || "ml.g5.2xlarge";
     const ocrEngine = props.ocrEngine || "paddle";
+    const instanceType = props.instanceType || (ocrEngine === "paddle" ? "ml.g5.2xlarge" : "ml.g5.4xlarge");
 
-    // PaddleOCRのコンテナパス
+    // OCRエンジンに応じたコンテナパス
+    const containerMap = {
+      paddle: "paddle-ocr", 
+      deepseek: "deepseek-ocr"
+    };
     const containerPath = path.join(
       __dirname,
-      "../../ocr-containers/paddle-ocr"
+      `../../ocr-containers/${containerMap[ocrEngine] || ocrEngine}`
     );
 
     const variantName = "AllTraffic";
     this.inferenceComponentName = `${baseName}-inference-component`;
 
-    // PaddleOCR用のデフォルト環境変数
-    const defaultEnv = {
+    // OCRエンジン用のデフォルト環境変数
+    let defaultEnv: Record<string, string> = {
       USE_GPU: "true",
       CUDA_VISIBLE_DEVICES: "0",
+      OCR_ENGINE: ocrEngine,
     };
+
+    // DeepSeek OCR用の追加環境変数
+    if (ocrEngine === "deepseek") {
+      defaultEnv = {
+        ...defaultEnv,
+        CROP_MODE: 'true',
+        MODEL_PATH: 'deepseek-ai/DeepSeek-OCR',
+        TORCH_CUDA_ARCH_LIST: '8.6',
+        NVIDIA_VISIBLE_DEVICES: 'all',
+        NVIDIA_DRIVER_CAPABILITIES: 'compute,utility',
+      };
+    }
 
     // デフォルトと指定された環境変数をマージ
     const environment = {
@@ -98,6 +115,7 @@ export class Ocr extends Construct {
     });
 
     const model = new CfnModel(this, "OcrModel", {
+      modelName: containerMap[ocrEngine],
       executionRoleArn: sagemakerRole.roleArn,
       primaryContainer: {
         image: dockerImage.imageUri,
@@ -126,8 +144,19 @@ export class Ocr extends Construct {
     });
 
     this.endpointName = endpoint.attrEndpointName;
-
+    
     endpoint.addDependency(endpointConfig);
+
+    // OCRエンジンに応じたリソース要件
+    let cpuCores = 1;
+    let memoryMb = 4096;
+    let acceleratorDevices = 1;
+    
+    if (ocrEngine === "deepseek") {
+      cpuCores = 8;
+      memoryMb = 42768;
+      acceleratorDevices = 1;
+    }
 
     const inferenceComponent = new CfnInferenceComponent(
       this,
@@ -139,9 +168,9 @@ export class Ocr extends Construct {
         specification: {
           modelName: model.attrModelName,
           computeResourceRequirements: {
-            numberOfAcceleratorDevicesRequired: 1,
-            numberOfCpuCoresRequired: 1,
-            minMemoryRequiredInMb: 4096,
+            numberOfAcceleratorDevicesRequired: acceleratorDevices,
+            numberOfCpuCoresRequired: cpuCores,
+            minMemoryRequiredInMb: memoryMb,
           },
         },
         runtimeConfig: {
