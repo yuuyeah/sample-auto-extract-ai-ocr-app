@@ -22,6 +22,8 @@
     "enable_ocr": true,
     "enable_agent": true,
     "enable_agent_demo": true,
+    "sagemaker_zero_scale": true,
+    "sagemaker_scale_in_cooldown_seconds": 3600,
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
     "@aws-cdk/core:checkSecretUsage": true,
     "@aws-cdk/core:target-partitions": [
