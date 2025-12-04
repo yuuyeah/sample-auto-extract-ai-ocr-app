@@ -28,7 +28,13 @@ export class OcrAppStack extends cdk.Stack {
     // OCRが有効な場合のみSageMakerエンドポイントを作成
     let ocrEndpoint = undefined;
     if (enableOcr) {
-      const ocr = new Ocr(this, "OcrEndpoint");
+      const enableZeroScale = this.node.tryGetContext("sagemaker_zero_scale") ?? true;
+      const scaleInCooldownSeconds = this.node.tryGetContext("sagemaker_scale_in_cooldown_seconds") ?? 3600;
+
+      const ocr = new Ocr(this, "OcrEndpoint", {
+        enableZeroScale: enableZeroScale,
+        scaleInCooldownSeconds: scaleInCooldownSeconds,
+      });
       ocrEndpoint = ocr;
     }
 

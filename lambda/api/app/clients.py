@@ -64,6 +64,16 @@ def create_sagemaker_runtime_client():
     )
 
 
+def create_sagemaker_client():
+    """
+    SageMaker クライアントを作成（エンドポイント管理用）
+    """
+    return boto3.client(
+        'sagemaker',
+        region_name=settings.AWS_REGION
+    )
+
+
 def create_bedrock_agentcore_client():
     """
     Bedrock AgentCore クライアントを作成
@@ -94,6 +104,7 @@ bedrock_client = create_bedrock_client()
 dynamodb_client = create_dynamodb_client()
 dynamodb_resource = create_dynamodb_resource()
 sagemaker_runtime_client = create_sagemaker_runtime_client()
+sagemaker_client = create_sagemaker_client()
 bedrock_agentcore_client = create_bedrock_agentcore_client()
 
 

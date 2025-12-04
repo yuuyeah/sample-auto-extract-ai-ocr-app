@@ -100,7 +100,10 @@ export class Api extends Construct {
     if (props.enableOcr && props.sagemakerEndpointName) {
       lambdaRole.addToPolicy(
         new PolicyStatement({
-          actions: ["sagemaker:InvokeEndpoint"],
+          actions: [
+            "sagemaker:InvokeEndpoint",
+            "sagemaker:DescribeInferenceComponent",
+          ],
           resources: ["*"],
         })
       );

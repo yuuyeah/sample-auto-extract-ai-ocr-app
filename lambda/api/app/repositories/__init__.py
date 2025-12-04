@@ -18,6 +18,11 @@ from .image_repository import (
     determine_parent_status,
     check_and_update_parent_status,
 )
+
+from .sagemaker_repository import (
+    get_inference_component_status,
+    trigger_endpoint_wakeup,
+)
 from .job_repository import (
     get_job,
 )
@@ -51,6 +56,9 @@ __all__ = [
     "get_children_by_parent_id",
     "determine_parent_status",
     "check_and_update_parent_status",
+    # SageMaker operations
+    "get_inference_component_status",
+    "trigger_endpoint_wakeup",
     # Job operations
     "get_job",
     # Schema operations
