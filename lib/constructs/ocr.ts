@@ -1,4 +1,14 @@
 import * as cdk from "aws-cdk-lib";
+import {
+  ScalableTarget,
+  ServiceNamespace,
+  TargetTrackingScalingPolicy,
+  StepScalingPolicy,
+  PredefinedMetric,
+  AdjustmentType,
+  MetricAggregationType,
+} from "aws-cdk-lib/aws-applicationautoscaling";
+import { Metric } from "aws-cdk-lib/aws-cloudwatch";
 import { DockerImageAsset, Platform } from "aws-cdk-lib/aws-ecr-assets";
 import {
   ManagedPolicy,
@@ -20,6 +30,8 @@ export interface OcrProps {
   ocrEngine?: "paddle";
   instanceType?: string;
   environment?: Record<string, string>;
+  enableZeroScale?: boolean;
+  scaleInCooldownSeconds?: number;
 }
 
 export class Ocr extends Construct {
@@ -152,6 +164,54 @@ export class Ocr extends Construct {
 
     inferenceComponent.addDependency(endpoint);
     inferenceComponent.addDependency(model);
+
+    // Auto Scaling設定（ゼロスケール）
+    if (props.enableZeroScale) {
+      const resourceId = `inference-component/${this.inferenceComponentName}`;
+
+      const scalableTarget = new ScalableTarget(this, "ScalableTarget", {
+        serviceNamespace: ServiceNamespace.SAGEMAKER,
+        scalableDimension: "sagemaker:inference-component:DesiredCopyCount",
+        resourceId: resourceId,
+        minCapacity: 0,
+        maxCapacity: 1,
+      });
+
+      scalableTarget.node.addDependency(inferenceComponent);
+
+      // ターゲットトラッキングポリシー（スケールイン用）
+      new TargetTrackingScalingPolicy(this, "TargetTrackingPolicy", {
+        scalingTarget: scalableTarget,
+        targetValue: 1,
+        predefinedMetric:
+          PredefinedMetric.SAGEMAKER_INFERENCE_COMPONENT_INVOCATIONS_PER_COPY,
+        scaleInCooldown: cdk.Duration.seconds(props.scaleInCooldownSeconds || 3600),
+        scaleOutCooldown: cdk.Duration.seconds(60),
+      });
+
+      // ステップスケーリングポリシー（スケールアウト用）
+      const noCapacityMetric = new Metric({
+        namespace: "AWS/SageMaker",
+        metricName: "NoCapacityInvocationFailures",
+        dimensionsMap: {
+          InferenceComponentName: this.inferenceComponentName,
+        },
+        statistic: "Maximum",
+        period: cdk.Duration.seconds(60),
+      });
+
+      new StepScalingPolicy(this, "StepScalingPolicy", {
+        scalingTarget: scalableTarget,
+        adjustmentType: AdjustmentType.CHANGE_IN_CAPACITY,
+        metricAggregationType: MetricAggregationType.MAXIMUM,
+        cooldown: cdk.Duration.seconds(60),
+        scalingSteps: [
+          { change: 1, lower: 0 },
+          { change: 0, upper: -1 },
+        ],
+        metric: noCapacityMetric,
+      });
+    }
 
     this.sagemakerRoleArn = sagemakerRole.roleArn;
 

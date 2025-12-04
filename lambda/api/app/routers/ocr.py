@@ -8,7 +8,7 @@ from schemas import (
     OcrResultResponse, OcrStartRequest, JobStartResponse, OcrResult
 )
 from services.ocr_service import OcrService
-from repositories import get_images, update_image_status
+from repositories import get_images, update_image_status, get_inference_component_status, trigger_endpoint_wakeup
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,22 @@ sfn_client = boto3.client('stepfunctions')
 async def start_ocr(request: OcrStartRequest = OcrStartRequest()):
     """OCR処理を開始する（Step Functions版）"""
     try:
+        # エンドポイント状態確認
+        status = get_inference_component_status()
+        
+        if not status['ready']:
+            # ダミーリクエストでスケールアウトをトリガー
+            trigger_endpoint_wakeup()
+            
+            # エラーレスポンス
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    'error': 'endpoint_not_ready',
+                    'message': 'OCRエンドポイント起動中（約10分）\n\nこの画面を開いたままにすると起動後に自動でOCR処理を開始します。\n画面を閉じてもバックグラウンドで起動処理は継続されます。'
+                }
+            )
+        
         job_id = str(uuid.uuid4())
         app_name = request.app_name or 'shiwakeru'
         
@@ -56,6 +72,8 @@ async def start_ocr(request: OcrStartRequest = OcrStartRequest()):
         
         return JobStartResponse(jobId=job_id)
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"OCR job start error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
@@ -87,6 +105,22 @@ async def update_ocr_result(image_id: str, edited_ocr_data: dict):
 async def start_ocr_for_image(image_id: str):
     """指定した画像IDのOCR処理を開始する（Step Functions版）"""
     try:
+        # エンドポイント状態確認
+        status = get_inference_component_status()
+        
+        if not status['ready']:
+            # ダミーリクエストでスケールアウトをトリガー
+            trigger_endpoint_wakeup()
+            
+            # エラーレスポンス
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    'error': 'endpoint_not_ready',
+                    'message': 'OCRエンドポイント起動中（約10分）\n\nこの画面を開いたままにすると起動後に自動でOCR処理を開始します。\n画面を閉じてもバックグラウンドで起動処理は継続されます。'
+                }
+            )
+        
         job_id = str(uuid.uuid4())
         
         # ステータスをprocessingに更新
@@ -104,7 +138,18 @@ async def start_ocr_for_image(image_id: str):
         
         logger.info(f"Started Step Functions execution for image {image_id}: {execution_response['executionArn']}")
         
-        return {"status": "processing", "image_id": image_id, "job_id": job_id}
+        return {" status": "processing", "image_id": image_id, "job_id": job_id}
     except Exception as e:
         logger.error(f"Error starting OCR for image: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.get("/endpoint-status")
+async def get_endpoint_status():
+    """エンドポイントの状態を確認（ポーリング用）"""
+    try:
+        status = get_inference_component_status()
+        return status
+    except Exception as e:
+        logger.error(f"Error checking endpoint status: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")

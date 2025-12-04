@@ -8,6 +8,7 @@ import OcrActionBar from "../components/OcrActionBar";
 import S3SyncModal from "../components/S3SyncModal";
 import CustomPromptModal from "../components/CustomPromptModal";
 import ConfirmModal from "../components/ConfirmModal";
+import LoadingToast from "../components/LoadingToast";
 
 function Upload() {
   const { appName } = useParams<{ appName: string }>();
@@ -35,6 +36,7 @@ function Upload() {
   const [files, setFiles] = useState<ImageFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [isEndpointWarming, setIsEndpointWarming] = useState(false);
   // pollingEnabledは使用されているので削除しない
   const [pollingEnabled] = useState(true);
 
@@ -62,10 +64,40 @@ function Upload() {
         // 成功したら即座に一覧を更新
         fetchFiles();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("OCR処理の開始に失敗しました:", error);
+      
+      // エンドポイント起動中エラーの場合
+      if (error.response?.status === 503 && error.response?.data?.detail?.error === 'endpoint_not_ready') {
+        setIsEndpointWarming(true);
+        setIsProcessing(false);
+        
+        // 10秒ごとにポーリング
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusResponse = await api.get('/ocr/endpoint-status');
+            
+            if (statusResponse.data.ready) {
+              clearInterval(pollInterval);
+              setIsEndpointWarming(false);
+              
+              // リトライ
+              const retryResponse = await api.post("/ocr/start", { app_name: appName });
+              if (retryResponse.data?.jobId) {
+                fetchFiles();
+              }
+            }
+          } catch (pollError) {
+            console.error('ポーリングエラー:', pollError);
+          }
+        }, 10000);
+        
+        return;
+      }
     } finally {
-      setIsProcessing(false);
+      if (!isEndpointWarming) {
+        setIsProcessing(false);
+      }
     }
   };
 
@@ -539,6 +571,12 @@ function Upload() {
         message={`アプリ「${appDisplayName || appName}」を削除してもよろしいですか？`}
         confirmText="削除"
         cancelText="キャンセル"
+      />
+
+      {/* エンドポイント起動中表示 */}
+      <LoadingToast
+        show={isEndpointWarming}
+        message={`OCRエンドポイント起動中（約10分）\n\nこの画面を開いたままにすると起動後に自動でOCR処理を開始します。\n画面を閉じてもバックグラウンドで起動処理は継続されます。`}
       />
     </div>
   );
