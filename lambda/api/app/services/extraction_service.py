@@ -6,7 +6,7 @@ from repositories import (
     get_image, update_extracted_info,
     update_image_status, get_extraction_fields_for_app,
     get_field_names_for_app, get_custom_prompt_for_app,
-    get_app_display_name
+    get_app_display_name, update_verification_status
 )
 from schemas import ExtractionRequest
 from config import settings
@@ -226,7 +226,9 @@ class ExtractionService:
                     "status": extraction_status or "not_started",
                     "app_name": app_name,
                     "app_display_name": app_display_name,
-                    "fields": app_extraction_fields
+                    "fields": app_extraction_fields,
+                    "verification_completed": image_data.get("verification_completed", False),
+                    "verification_completed_at": image_data.get("verification_completed_at")
                 }
 
             extracted_info = image_data.get("extracted_info", {})
@@ -246,7 +248,9 @@ class ExtractionService:
                 "status": extraction_status,
                 "app_name": app_name,
                 "app_display_name": app_display_name,
-                "fields": app_extraction_fields
+                "fields": app_extraction_fields,
+                "verification_completed": image_data.get("verification_completed", False),
+                "verification_completed_at": image_data.get("verification_completed_at")
             }
 
             logger.info(f"Retrieved extraction result for image {image_id}")
@@ -338,3 +342,15 @@ class ExtractionService:
             return MultiImageExtractor(image_id, image_data)
         else:
             return SingleImageExtractor(image_id, image_data)
+
+    async def update_verification_status(self, image_id: str, verification_completed: bool) -> Dict[str, Any]:
+        """確認完了ステータスを更新する"""
+        try:
+            update_verification_status(image_id, verification_completed)
+            return {
+                "status": "success",
+                "verification_completed": verification_completed
+            }
+        except Exception as e:
+            logger.error(f"Error updating verification status: {str(e)}")
+            raise

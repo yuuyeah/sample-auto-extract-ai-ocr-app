@@ -390,6 +390,32 @@ def delete_image(image_id: str) -> bool:
         return False
 
 
+def update_verification_status(image_id: str, verification_completed: bool) -> None:
+    """
+    確認完了ステータスを更新する
+
+    Args:
+        image_id (str): 画像ID
+        verification_completed (bool): 確認完了フラグ
+    """
+    table = get_images_table()
+    current_time = datetime.now().isoformat()
+    
+    try:
+        table.update_item(
+            Key={"id": image_id},
+            UpdateExpression="SET verification_completed = :completed, verification_completed_at = :timestamp",
+            ExpressionAttributeValues={
+                ":completed": verification_completed,
+                ":timestamp": current_time if verification_completed else None
+            }
+        )
+        logger.info(f"確認完了ステータスを更新: {image_id} -> {verification_completed}")
+    except Exception as e:
+        logger.error(f"確認完了ステータス更新エラー: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
 def create_individual_page_record(page_id: str, parent_image_id: str, filename: str,
                                   converted_s3_key: str,
                                   page_number: int, total_pages: int, app_name: str,

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import api, { runAgent as apiRunAgent, getAgentTools } from "../utils/api";
+import api, { runAgent as apiRunAgent, getAgentTools, updateVerificationStatus } from "../utils/api";
 import { OcrWord, OcrBoundingBox, OcrResponse, PresignedDownloadUrlResponse } from "../types/ocr";
 import { ExtractionResponse, ExtractionMapping } from "../types/extraction";
 import { Field } from "../types/app-schema";
@@ -56,6 +56,7 @@ function OcrResult() {
   const [activeView, setActiveView] = useState<"ocr" | "extraction">(
     "extraction" // OCRモードに関係なく、常に抽出画面から開始
   );
+  const [verificationCompleted, setVerificationCompleted] = useState(false);
 
   // ポーリング設定
   const POLLING_INTERVAL = 3000; // 3秒
@@ -341,6 +342,9 @@ function OcrResult() {
       if (response.data.app_name) {
         setAppName(response.data.app_name);
       }
+
+      // 確認完了状態を設定
+      setVerificationCompleted(response.data.verification_completed || false);
 
       if (response.data.status === "completed") {
         console.log("抽出情報の取得完了 - ステータス: completed");
@@ -817,6 +821,19 @@ function OcrResult() {
     setShowConfirmModal(true);
   };
 
+  const handleVerificationChange = async (completed: boolean) => {
+    if (!id) return;
+    
+    setVerificationCompleted(completed); // 楽観的UI更新
+    try {
+      await updateVerificationStatus(id, completed);
+      showToast(completed ? '確認完了にしました' : '確認完了を解除しました', 'success');
+    } catch (error) {
+      setVerificationCompleted(!completed); // エラー時はロールバック
+      showToast('確認完了の更新に失敗しました', 'error');
+    }
+  };
+
   const executeReExtract = async () => {
     if (!id) return;
     
@@ -1037,6 +1054,8 @@ function OcrResult() {
                   onBackToExtraction={() => changeView("extraction")}
                   onViewOcr={() => changeView("ocr")}
                   isOcrEnabled={isOcrEnabled()}
+                  verificationCompleted={verificationCompleted}
+                  onVerificationChange={handleVerificationChange}
                 />
               )}
             </div>

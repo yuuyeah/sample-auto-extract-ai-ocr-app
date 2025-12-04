@@ -16,6 +16,8 @@ interface ExtractedInfoDisplayProps {
   onBackToExtraction?: () => void;
   onViewOcr?: () => void;
   isOcrEnabled?: boolean;
+  verificationCompleted?: boolean;
+  onVerificationChange?: (completed: boolean) => void;
 }
 
 const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
@@ -32,6 +34,8 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
   onBackToExtraction,
   onViewOcr,
   isOcrEnabled = false,
+  verificationCompleted = false,
+  onVerificationChange,
 }) => {
   const [editMode, setEditMode] = useState(false);
   const [editedInfo, setEditedInfo] = useState<Record<string, any>>(extractedInfo);
@@ -525,47 +529,63 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
           </div>
         ) : (
           /* 抽出ビュー時: 通常のボタン */
-          <div className="flex items-center gap-3">
-            <button
-              onClick={toggleEditMode}
-              className="px-4 py-2 rounded bg-blue-500 hover:bg-blue-600 text-white"
-            >
-              編集
-            </button>
-            {isOcrEnabled && onViewOcr && (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
               <button
-                onClick={onViewOcr}
-                className="px-4 py-2 rounded bg-indigo-500 hover:bg-indigo-600 text-white"
+                onClick={toggleEditMode}
+                className="px-4 py-2 rounded bg-blue-500 hover:bg-blue-600 text-white"
               >
-                OCR結果を確認
+                編集
               </button>
-            )}
+              {isOcrEnabled && onViewOcr && (
+                <button
+                  onClick={onViewOcr}
+                  className="px-4 py-2 rounded bg-indigo-500 hover:bg-indigo-600 text-white"
+                >
+                  OCR結果を確認
+                </button>
+              )}
+              
+              {/* 区切り線 */}
+              {onRunAgent && (
+                <>
+                  <div className="h-8 w-px bg-gray-300"></div>
+                  
+                  {/* 高度な機能 */}
+                  <button
+                    onClick={handleShowTools}
+                    className="px-3 py-2 rounded border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm"
+                  >
+                    登録ツール一覧
+                  </button>
+                  <button
+                    onClick={handleRunAgent}
+                    disabled={agentStatus === 'running'}
+                    className={`px-3 py-2 rounded border text-sm ${
+                      agentStatus === 'running'
+                        ? 'border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'border-purple-300 hover:bg-purple-50 text-purple-700'
+                    }`}
+                  >
+                    {agentStatus === 'running' ? '検証中...' : 'エージェントで検証'}
+                  </button>
+                </>
+              )}
+            </div>
             
-            {/* 区切り線 */}
-            {onRunAgent && (
-              <>
-                <div className="h-8 w-px bg-gray-300"></div>
-                
-                {/* 高度な機能 */}
-                <button
-                  onClick={handleShowTools}
-                  className="px-3 py-2 rounded border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm"
-                >
-                  登録ツール一覧
-                </button>
-                <button
-                  onClick={handleRunAgent}
-                  disabled={agentStatus === 'running'}
-                  className={`px-3 py-2 rounded border text-sm ${
-                    agentStatus === 'running'
-                      ? 'border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : 'border-purple-300 hover:bg-purple-50 text-purple-700'
-                  }`}
-                >
-                  {agentStatus === 'running' ? '検証中...' : 'エージェントで検証'}
-                </button>
-              </>
-            )}
+            {/* 確認完了チェックボックス */}
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="verification-complete"
+                checked={verificationCompleted}
+                onChange={(e) => onVerificationChange?.(e.target.checked)}
+                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+              />
+              <label htmlFor="verification-complete" className="text-sm text-gray-700 cursor-pointer">
+                確認完了
+              </label>
+            </div>
           </div>
         )}
       </div>
