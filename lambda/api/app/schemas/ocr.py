@@ -30,6 +30,7 @@ class OcrResultResponse(BaseModel):
     status: Optional[str]
     ocrResult: OcrResult
     imageUrl: Optional[str]
+    app_name: Optional[str]
 
 
 class OcrStartRequest(BaseModel):

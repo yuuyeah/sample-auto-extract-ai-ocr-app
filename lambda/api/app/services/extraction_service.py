@@ -6,7 +6,7 @@ from repositories import (
     get_image, update_extracted_info,
     update_image_status, get_extraction_fields_for_app,
     get_field_names_for_app, get_custom_prompt_for_app,
-    get_app_display_name, DEFAULT_APP
+    get_app_display_name, update_verification_status
 )
 from schemas import ExtractionRequest
 from config import settings
@@ -50,7 +50,11 @@ class MultiImageExtractor(InformationExtractor):
                 update_image_status(self.image_id, "failed")
                 raise ValueError(f"画像 {self.image_id} が見つかりません")
 
-            app_name = image_data.get("app_name", DEFAULT_APP)
+            app_name = image_data.get("app_name")
+            if not app_name:
+                logger.error(f"app_name not found for image {self.image_id}")
+                raise ValueError(f"app_name not found for image {self.image_id}")
+            
             app_extraction_fields = get_extraction_fields_for_app(app_name)
             field_names = get_field_names_for_app(app_name)
             custom_prompt = get_custom_prompt_for_app(app_name)
@@ -131,7 +135,11 @@ class SingleImageExtractor(InformationExtractor):
                 update_image_status(self.image_id, "failed")
                 raise ValueError(f"画像 {self.image_id} が見つかりません")
 
-            app_name = image_data.get("app_name", DEFAULT_APP)
+            app_name = image_data.get("app_name")
+            if not app_name:
+                logger.error(f"app_name not found for image {self.image_id}")
+                raise ValueError(f"app_name not found for image {self.image_id}")
+            
             app_extraction_fields = get_extraction_fields_for_app(app_name)
             field_names = get_field_names_for_app(app_name)
             custom_prompt = get_custom_prompt_for_app(app_name)
@@ -200,7 +208,11 @@ class ExtractionService:
                 logger.warning(f"画像が見つかりません (image_id: {image_id})")
                 raise ValueError("画像が見つかりません")
 
-            app_name = image_data.get("app_name", DEFAULT_APP)
+            app_name = image_data.get("app_name")
+            if not app_name:
+                logger.error(f"app_name not found for image {image_id}")
+                raise ValueError(f"app_name not found for image {image_id}")
+            
             app_display_name = get_app_display_name(app_name)
             app_extraction_fields = get_extraction_fields_for_app(app_name)[
                 "fields"]
@@ -214,7 +226,9 @@ class ExtractionService:
                     "status": extraction_status or "not_started",
                     "app_name": app_name,
                     "app_display_name": app_display_name,
-                    "fields": app_extraction_fields
+                    "fields": app_extraction_fields,
+                    "verification_completed": image_data.get("verification_completed", False),
+                    "verification_completed_at": image_data.get("verification_completed_at")
                 }
 
             extracted_info = image_data.get("extracted_info", {})
@@ -234,7 +248,9 @@ class ExtractionService:
                 "status": extraction_status,
                 "app_name": app_name,
                 "app_display_name": app_display_name,
-                "fields": app_extraction_fields
+                "fields": app_extraction_fields,
+                "verification_completed": image_data.get("verification_completed", False),
+                "verification_completed_at": image_data.get("verification_completed_at")
             }
 
             logger.info(f"Retrieved extraction result for image {image_id}")
@@ -326,3 +342,15 @@ class ExtractionService:
             return MultiImageExtractor(image_id, image_data)
         else:
             return SingleImageExtractor(image_id, image_data)
+
+    async def update_verification_status(self, image_id: str, verification_completed: bool) -> Dict[str, Any]:
+        """確認完了ステータスを更新する"""
+        try:
+            update_verification_status(image_id, verification_completed)
+            return {
+                "status": "success",
+                "verification_completed": verification_completed
+            }
+        except Exception as e:
+            logger.error(f"Error updating verification status: {str(e)}")
+            raise

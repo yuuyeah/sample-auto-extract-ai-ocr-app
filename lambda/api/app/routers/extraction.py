@@ -59,3 +59,15 @@ async def update_extraction_result(image_id: str, edited_data: dict):
     except Exception as e:
         logger.error(f"Error updating extraction result: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.post("/verification/{image_id}")
+async def update_verification_status(image_id: str, request: dict):
+    """確認完了ステータスを更新する"""
+    try:
+        verification_completed = request.get("verification_completed", False)
+        result = await extraction_service.update_verification_status(image_id, verification_completed)
+        return result
+    except Exception as e:
+        logger.error(f"Error updating verification status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")

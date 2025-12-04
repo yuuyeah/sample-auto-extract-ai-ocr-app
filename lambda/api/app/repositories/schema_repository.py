@@ -5,9 +5,6 @@ from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
-# デフォルトアプリ
-DEFAULT_APP = "shipping_ocr"
-
 # DynamoDB クライアント
 dynamodb = boto3.resource('dynamodb')
 
@@ -80,8 +77,7 @@ def get_app_schema(app_name):
             return app
     
     logger.warning(f"App '{app_name}' not found in schemas")
-    # アプリが見つからない場合はデフォルトの空スキーマを返す
-    return {"name": app_name, "fields": []}
+    return None
 
 
 def get_extraction_fields_for_app(app_name):

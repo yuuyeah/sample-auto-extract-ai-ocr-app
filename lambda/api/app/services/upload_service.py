@@ -7,7 +7,8 @@ from fastapi.responses import StreamingResponse
 import io
 
 from repositories import (
-    create_image_record, get_image, get_images, update_image_status, update_converted_image
+    create_image_record, get_image, get_images, update_image_status, update_converted_image,
+    get_children_by_parent_id, delete_image as repo_delete_image
 )
 from schemas import (
     PresignedUrlRequest, PresignedUrlResponse, UploadCompleteRequest
@@ -19,8 +20,6 @@ from repositories import get_app_schemas, get_app_input_methods
 logger = logging.getLogger(__name__)
 
 # 共通のS3クライアントを使用
-
-DEFAULT_APP = "default"
 
 
 class UploadService:
@@ -41,9 +40,8 @@ class UploadService:
                     break
 
             if not valid_app:
-                logger.warning(
-                    f"Invalid app name: {request.app_name}, using default: {DEFAULT_APP}")
-                request.app_name = DEFAULT_APP
+                logger.error(f"Invalid app name: {request.app_name}")
+                raise ValueError(f"Invalid app name: {request.app_name}")
 
             # アプリケーションの入力方法設定を取得
             input_methods = get_app_input_methods(request.app_name)
@@ -348,4 +346,53 @@ class UploadService:
 
         except Exception as e:
             logger.error(f"Error getting images list: {str(e)}")
+            raise
+
+    async def delete_image(self, image_id: str) -> Dict[str, Any]:
+        """画像を削除する"""
+        try:
+            from fastapi import HTTPException
+            
+            image = get_image(image_id)
+            if not image:
+                raise HTTPException(status_code=404, detail="Image not found")
+            
+            parent_document_id = image.get("parent_document_id")
+            page_processing_mode = image.get("page_processing_mode")
+            total_pages = image.get("total_pages", 0)
+            
+            # 親ファイルの場合（個別処理で2ページ以上、parent_document_idなし）
+            is_parent = (not parent_document_id and 
+                        page_processing_mode == "individual" and 
+                        total_pages > 1)
+            
+            if is_parent:
+                # 親ファイルの場合、全ての子ファイルも削除
+                children = get_children_by_parent_id(image_id)
+                for child in children:
+                    repo_delete_image(child['id'])
+                    logger.info(f"Deleted child image: {child['id']}")
+            
+            # 子ファイルの場合、削除前に残りの子ファイル数をチェック
+            remaining_count = 0
+            if parent_document_id:
+                all_children = get_children_by_parent_id(parent_document_id)
+                # 削除前の子ファイル数をカウント（自分自身を除く）
+                remaining_count = len([c for c in all_children if c['id'] != image_id])
+                logger.info(f"Remaining children count (before deletion): {remaining_count}")
+            
+            # 対象ファイルを削除
+            repo_delete_image(image_id)
+            logger.info(f"Deleted image: {image_id}")
+            
+            # 子ファイルの場合、残りが0なら親も削除
+            if parent_document_id and remaining_count == 0:
+                # 子ファイルが全て削除されたら親も削除
+                repo_delete_image(parent_document_id)
+                logger.info(f"Deleted parent image: {parent_document_id}")
+            
+            return {"status": "success", "message": "Image deleted successfully"}
+
+        except Exception as e:
+            logger.error(f"Error deleting image: {str(e)}")
             raise

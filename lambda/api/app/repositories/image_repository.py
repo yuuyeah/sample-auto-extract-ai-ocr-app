@@ -131,7 +131,8 @@ def get_images(app_name=None):
                 "pageProcessingMode": item.get("page_processing_mode"),
                 "totalPages": item.get("total_pages"),
                 "pageNumber": item.get("page_number"),
-                "parentDocumentId": item.get("parent_document_id")
+                "parentDocumentId": item.get("parent_document_id"),
+                "verificationCompleted": item.get("verification_completed", False)
             })
 
         return images
@@ -368,6 +369,52 @@ def delete_images_by_app_name(app_name: str):
     except Exception as e:
         logger.error(f"画像データ削除エラー (app_name: {app_name}): {str(e)}")
         return False
+
+
+def delete_image(image_id: str) -> bool:
+    """
+    画像レコードを削除する
+
+    Args:
+        image_id (str): 画像ID
+
+    Returns:
+        bool: 削除が成功したかどうか
+    """
+    try:
+        table = get_images_table()
+        table.delete_item(Key={'id': image_id})
+        logger.info(f"Deleted image: {image_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Error deleting image {image_id}: {str(e)}")
+        return False
+
+
+def update_verification_status(image_id: str, verification_completed: bool) -> None:
+    """
+    確認完了ステータスを更新する
+
+    Args:
+        image_id (str): 画像ID
+        verification_completed (bool): 確認完了フラグ
+    """
+    table = get_images_table()
+    current_time = datetime.now().isoformat()
+    
+    try:
+        table.update_item(
+            Key={"id": image_id},
+            UpdateExpression="SET verification_completed = :completed, verification_completed_at = :timestamp",
+            ExpressionAttributeValues={
+                ":completed": verification_completed,
+                ":timestamp": current_time if verification_completed else None
+            }
+        )
+        logger.info(f"確認完了ステータスを更新: {image_id} -> {verification_completed}")
+    except Exception as e:
+        logger.error(f"確認完了ステータス更新エラー: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 def create_individual_page_record(page_id: str, parent_image_id: str, filename: str,

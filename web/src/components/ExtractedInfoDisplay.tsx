@@ -5,7 +5,6 @@ import { Suggestion, Tool } from '../types/agent';
 interface ExtractedInfoDisplayProps {
   extractedInfo: Record<string, any>;
   fields: Field[];
-  appDisplayName: string;
   onSave: () => void;
   onHighlightField: (field: string, stayOnExtractionView?: boolean) => void;
   onHighlightCell: (fieldName: string, rowIndex: number, columnName: string) => void;
@@ -13,12 +12,17 @@ interface ExtractedInfoDisplayProps {
   onRunAgent?: () => Promise<Suggestion[]>;
   agentStatus?: 'idle' | 'running' | 'completed';
   onGetTools?: () => Promise<Tool[]>;
+  activeView?: 'ocr' | 'extraction';
+  onBackToExtraction?: () => void;
+  onViewOcr?: () => void;
+  isOcrEnabled?: boolean;
+  verificationCompleted?: boolean;
+  onVerificationChange?: (completed: boolean) => void;
 }
 
 const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
   extractedInfo,
   fields,
-  appDisplayName,
   onSave,
   onHighlightField,
   onHighlightCell,
@@ -26,6 +30,12 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
   onRunAgent,
   agentStatus = 'idle',
   onGetTools,
+  activeView = 'extraction',
+  onBackToExtraction,
+  onViewOcr,
+  isOcrEnabled = false,
+  verificationCompleted = false,
+  onVerificationChange,
 }) => {
   const [editMode, setEditMode] = useState(false);
   const [editedInfo, setEditedInfo] = useState<Record<string, any>>(extractedInfo);
@@ -490,56 +500,94 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold">{appDisplayName}の抽出結果</h2>
-        <div className="flex space-x-2">
-          {editMode ? (
-            <>
-              <button
-                onClick={cancelEdit}
-                className="px-4 py-2 rounded bg-gray-500 hover:bg-gray-600 text-white"
-              >
-                キャンセル
-              </button>
-              <button
-                onClick={toggleEditMode}
-                className="px-4 py-2 rounded bg-green-500 hover:bg-green-600 text-white"
-              >
-                保存
-              </button>
-            </>
-          ) : (
-            <>
+      <div className="mb-4">
+        {activeView === 'ocr' ? (
+          /* OCRビュー時: 戻るボタンのみ */
+          onBackToExtraction && (
+            <button
+              onClick={onBackToExtraction}
+              className="px-4 py-2 rounded bg-gray-500 hover:bg-gray-600 text-white"
+            >
+              抽出画面へ戻る
+            </button>
+          )
+        ) : editMode ? (
+          /* 編集モード時 */
+          <div className="flex gap-2">
+            <button
+              onClick={cancelEdit}
+              className="px-4 py-2 rounded bg-gray-500 hover:bg-gray-600 text-white"
+            >
+              キャンセル
+            </button>
+            <button
+              onClick={toggleEditMode}
+              className="px-4 py-2 rounded bg-green-500 hover:bg-green-600 text-white"
+            >
+              保存
+            </button>
+          </div>
+        ) : (
+          /* 抽出ビュー時: 通常のボタン */
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
               <button
                 onClick={toggleEditMode}
                 className="px-4 py-2 rounded bg-blue-500 hover:bg-blue-600 text-white"
               >
                 編集
               </button>
+              {isOcrEnabled && onViewOcr && (
+                <button
+                  onClick={onViewOcr}
+                  className="px-4 py-2 rounded bg-indigo-500 hover:bg-indigo-600 text-white"
+                >
+                  OCR結果を確認
+                </button>
+              )}
+              
+              {/* 区切り線 */}
               {onRunAgent && (
                 <>
+                  <div className="h-8 w-px bg-gray-300"></div>
+                  
+                  {/* 高度な機能 */}
                   <button
                     onClick={handleShowTools}
-                    className="px-4 py-2 rounded bg-gray-500 hover:bg-gray-600 text-white"
+                    className="px-3 py-2 rounded border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm"
                   >
                     登録ツール一覧
                   </button>
                   <button
                     onClick={handleRunAgent}
                     disabled={agentStatus === 'running'}
-                    className={`px-4 py-2 rounded text-white ${
+                    className={`px-3 py-2 rounded border text-sm ${
                       agentStatus === 'running'
-                        ? 'bg-gray-400 cursor-not-allowed'
-                        : 'bg-purple-500 hover:bg-purple-600'
+                        ? 'border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'border-purple-300 hover:bg-purple-50 text-purple-700'
                     }`}
                   >
                     {agentStatus === 'running' ? '検証中...' : 'エージェントで検証'}
                   </button>
                 </>
               )}
-            </>
-          )}
-        </div>
+            </div>
+            
+            {/* 確認完了チェックボックス */}
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="verification-complete"
+                checked={verificationCompleted}
+                onChange={(e) => onVerificationChange?.(e.target.checked)}
+                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+              />
+              <label htmlFor="verification-complete" className="text-sm text-gray-700 cursor-pointer">
+                確認完了
+              </label>
+            </div>
+          </div>
+        )}
       </div>
       
       <div className="space-y-4">

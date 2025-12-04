@@ -11,7 +11,7 @@ import logging
 import base64
 import uuid
 
-from repositories import get_app_schema, get_extraction_fields_for_app, get_field_names_for_app, get_custom_prompt_for_app, DEFAULT_APP
+from repositories import get_app_schema, get_extraction_fields_for_app, get_field_names_for_app, get_custom_prompt_for_app
 from repositories import get_image, update_extracted_info, update_image_status
 
 logger = logging.getLogger(__name__)

@@ -8,7 +8,7 @@ from schemas import (
     OcrResultResponse, OcrStartRequest, JobStartResponse, OcrResult
 )
 from services.ocr_service import OcrService
-from repositories import create_job, get_images, update_image_status
+from repositories import get_images, update_image_status
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -42,10 +42,7 @@ async def start_ocr(request: OcrStartRequest = OcrStartRequest()):
         for img in pending_images:
             update_image_status(img['id'], 'processing', job_id)
         
-        # 3. ジョブ作成
-        create_job(job_id, 'processing')
-        
-        # 4. Step Functions起動
+        # 3. Step Functions起動
         execution_response = sfn_client.start_execution(
             stateMachineArn=settings.STATE_MACHINE_ARN,
             name=f"ocr-job-{job_id}",
@@ -61,17 +58,6 @@ async def start_ocr(request: OcrStartRequest = OcrStartRequest()):
         
     except Exception as e:
         logger.error(f"OCR job start error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-
-
-@router.get("/status/{job_id}")
-async def get_ocr_status(job_id: str):
-    """OCRジョブのステータスを取得する"""
-    try:
-        status = await ocr_service.get_job_status(job_id)
-        return status
-    except Exception as e:
-        logger.error(f"Error getting job status: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
@@ -94,4 +80,31 @@ async def update_ocr_result(image_id: str, edited_ocr_data: dict):
         return {"status": "success", "message": "OCR results updated successfully"}
     except Exception as e:
         logger.error(f"Error updating OCR result: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.post("/start/{image_id}")
+async def start_ocr_for_image(image_id: str):
+    """指定した画像IDのOCR処理を開始する（Step Functions版）"""
+    try:
+        job_id = str(uuid.uuid4())
+        
+        # ステータスをprocessingに更新
+        update_image_status(image_id, 'processing', job_id)
+        
+        # Step Functions起動（単一画像）
+        execution_response = sfn_client.start_execution(
+            stateMachineArn=settings.STATE_MACHINE_ARN,
+            name=f"ocr-single-{image_id}-{job_id[:8]}",
+            input=json.dumps({
+                'job_id': job_id,
+                'images': [{'image_id': image_id}]
+            })
+        )
+        
+        logger.info(f"Started Step Functions execution for image {image_id}: {execution_response['executionArn']}")
+        
+        return {"status": "processing", "image_id": image_id, "job_id": job_id}
+    except Exception as e:
+        logger.error(f"Error starting OCR for image: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
