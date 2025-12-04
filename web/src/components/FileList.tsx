@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { ImageFile } from '../types/ocr';
 import StatusBadge from './StatusBadge';
 import { formatDateTimeJST } from '../utils/dateUtils';
+import { deleteImage } from '../utils/api';
+import Toast from './Toast';
 
 interface FileListProps {
   files: ImageFile[];
@@ -20,6 +22,17 @@ type SortField = 'uploadTime' | 'status' | 'name';
 const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
   const navigate = useNavigate();
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; imageId: string; imageName: string }>({ 
+    show: false, 
+    imageId: '', 
+    imageName: '' 
+  });
+  const [toast, setToast] = useState<{ show: boolean; message: string; type: 'success' | 'error' }>({ 
+    show: false, 
+    message: '', 
+    type: 'success' 
+  });
+  const [deleting, setDeleting] = useState(false);
   const sortField: SortField = 'uploadTime';
 
   const sortFiles = (fileList: ImageFile[]) => {
@@ -46,6 +59,26 @@ const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
   // 結果表示ボタンのクリックハンドラ
   const handleViewResult = (id: string) => {
     navigate(`/ocr-result/${id}`);
+  };
+
+  // 削除確認ダイアログを表示
+  const handleDeleteClick = (imageId: string, imageName: string) => {
+    setDeleteConfirm({ show: true, imageId, imageName });
+  };
+
+  // 削除実行
+  const handleDeleteConfirm = async () => {
+    setDeleting(true);
+    try {
+      await deleteImage(deleteConfirm.imageId);
+      setToast({ show: true, message: '画像を削除しました', type: 'success' });
+      setDeleteConfirm({ show: false, imageId: '', imageName: '' });
+      onRefresh();
+    } catch (error) {
+      setToast({ show: true, message: '削除に失敗しました', type: 'error' });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   // 親ドキュメントの展開/折りたたみ
@@ -226,6 +259,22 @@ const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
                     <div className="text-sm w-20 flex-shrink-0">
                       <span className="text-gray-400">-</span>
                     </div>
+                    
+                    {/* 削除ボタン */}
+                    <div className="w-8 flex-shrink-0 flex justify-center">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteClick(file.id, file.name);
+                        }}
+                        className="text-gray-400 hover:text-gray-600"
+                        title="削除（全ページ削除）"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   
                   {/* 子ページ一覧 */}
@@ -268,6 +317,9 @@ const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
                               <span className="text-gray-400">処理待ち</span>
                             )}
                           </div>
+                          
+                          {/* 削除ボタン（子ページは削除不可） */}
+                          <div className="w-8 flex-shrink-0"></div>
                         </div>
                       ))}
                     </div>
@@ -331,6 +383,19 @@ const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
                           <span className="text-gray-400">処理待ち</span>
                         )}
                       </div>
+                      
+                      {/* 削除ボタン */}
+                      <div className="w-8 flex-shrink-0 flex justify-center">
+                        <button
+                          onClick={() => handleDeleteClick(file.id, file.name)}
+                          className="text-gray-400 hover:text-gray-600"
+                          title="削除"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -348,6 +413,42 @@ const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
           </p>
         </div>
       )}
+
+      {/* 削除確認モーダル */}
+      {deleteConfirm.show && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">画像の削除</h3>
+            <p className="text-gray-600 mb-6">
+              「{deleteConfirm.imageName}」を削除します。この操作は取り消せません。
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteConfirm({ show: false, imageId: '', imageName: '' })}
+                className="px-4 py-2 rounded bg-gray-500 hover:bg-gray-600 text-white"
+                disabled={deleting}
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                className="px-4 py-2 rounded bg-red-500 hover:bg-red-600 text-white"
+                disabled={deleting}
+              >
+                {deleting ? '削除中...' : '削除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast通知 */}
+      <Toast
+        show={toast.show}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast({ ...toast, show: false })}
+      />
     </div>
   );
 };

@@ -370,6 +370,26 @@ def delete_images_by_app_name(app_name: str):
         return False
 
 
+def delete_image(image_id: str) -> bool:
+    """
+    画像レコードを削除する
+
+    Args:
+        image_id (str): 画像ID
+
+    Returns:
+        bool: 削除が成功したかどうか
+    """
+    try:
+        table = get_images_table()
+        table.delete_item(Key={'id': image_id})
+        logger.info(f"Deleted image: {image_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Error deleting image {image_id}: {str(e)}")
+        return False
+
+
 def create_individual_page_record(page_id: str, parent_image_id: str, filename: str,
                                   converted_s3_key: str,
                                   page_number: int, total_pages: int, app_name: str,

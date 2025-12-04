@@ -118,3 +118,7 @@ export const getAgentTools = async () => {
 };
 
 export default api;
+
+export const deleteImage = async (imageId: string) => {
+  return api.delete(`/images/${imageId}`);
+};

@@ -65,3 +65,14 @@ async def get_images(app_name: str = None):
     except Exception as e:
         logger.error(f"Error getting images list: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.delete("/images/{image_id}")
+async def delete_image(image_id: str):
+    """画像を削除する"""
+    try:
+        result = await upload_service.delete_image(image_id)
+        return result
+    except Exception as e:
+        logger.error(f"Error deleting image: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
