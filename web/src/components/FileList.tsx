@@ -35,6 +35,13 @@ const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
   const [deleting, setDeleting] = useState(false);
   const sortField: SortField = 'uploadTime';
 
+  // 親ドキュメントをデフォルトで開く
+  React.useEffect(() => {
+    const grouped = groupFiles(files);
+    const parentIds = grouped.parentDocuments.map(p => p.id);
+    setExpandedParents(new Set(parentIds));
+  }, [files]);
+
   const sortFiles = (fileList: ImageFile[]) => {
     return [...fileList].sort((a, b) => {
       let aValue: any = a[sortField];
@@ -255,6 +262,11 @@ const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
                       <StatusBadge status={overallStatus} />
                     </div>
                     
+                    {/* 確認済み（親は表示しない） */}
+                    <div className="w-16 flex-shrink-0 flex justify-center">
+                      <span className="text-gray-300">-</span>
+                    </div>
+                    
                     {/* 操作ボタン（空白でスペース確保） */}
                     <div className="text-sm w-20 flex-shrink-0">
                       <span className="text-gray-400">-</span>
@@ -302,6 +314,17 @@ const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
                           {/* ステータス */}
                           <div className="w-24 flex-shrink-0">
                             <StatusBadge status={childFile.status} />
+                          </div>
+                          
+                          {/* 確認済み */}
+                          <div className="w-16 flex-shrink-0 flex justify-center">
+                            {childFile.verificationCompleted ? (
+                              <svg className="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                              </svg>
+                            ) : (
+                              <span className="text-gray-300">-</span>
+                            )}
                           </div>
                           
                           {/* 操作ボタン */}
@@ -368,6 +391,17 @@ const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
                       {/* ステータス */}
                       <div className="w-24 flex-shrink-0">
                         <StatusBadge status={file.status} />
+                      </div>
+                      
+                      {/* 確認済み */}
+                      <div className="w-16 flex-shrink-0 flex justify-center">
+                        {file.verificationCompleted ? (
+                          <svg className="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                        ) : (
+                          <span className="text-gray-300">-</span>
+                        )}
                       </div>
                       
                       {/* 操作ボタン */}

@@ -131,7 +131,8 @@ def get_images(app_name=None):
                 "pageProcessingMode": item.get("page_processing_mode"),
                 "totalPages": item.get("total_pages"),
                 "pageNumber": item.get("page_number"),
-                "parentDocumentId": item.get("parent_document_id")
+                "parentDocumentId": item.get("parent_document_id"),
+                "verificationCompleted": item.get("verification_completed", False)
             })
 
         return images

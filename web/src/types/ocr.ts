@@ -10,6 +10,7 @@ export interface ImageFile {
   pageNumber?: number;
   totalPages?: number;
   parentDocumentId?: string;
+  verificationCompleted?: boolean;
 }
 
 export interface OcrWord {
@@ -43,6 +44,7 @@ export interface OcrResponse {
     words: OcrWord[];
   };
   imageUrl: string;
+  app_name?: string;
 }
 
 export interface OcrStartResponse {

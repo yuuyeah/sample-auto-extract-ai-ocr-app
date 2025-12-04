@@ -141,7 +141,8 @@ class OcrService:
             status=image_data.get("status"),
             ocrResult=OcrResult(
                 **ocr_result) if ocr_result else OcrResult(words=[]),
-            imageUrl=image_url
+            imageUrl=image_url,
+            app_name=image_data.get("app_name")
         )
 
     async def update_ocr_result(self, image_id: str, edited_ocr_data: dict) -> None:
