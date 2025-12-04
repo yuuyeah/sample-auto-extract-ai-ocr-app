@@ -5,9 +5,6 @@ from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
-# デフォルトアプリ
-DEFAULT_APP = "shipping_ocr"
-
 # DynamoDB クライアント
 dynamodb = boto3.resource('dynamodb')
 

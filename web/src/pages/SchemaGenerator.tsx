@@ -25,7 +25,7 @@ const SchemaGenerator: React.FC<SchemaGeneratorProps> = ({ mode = 'create' }) =>
   const navigate = useNavigate();
   const { appName: urlAppName } = useParams<{ appName: string }>();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { refreshApps } = useAppContext();
+  const { refreshApps, apps } = useAppContext();
   
   // モード関連の状態
   const [isViewMode] = useState(mode === 'view');
@@ -47,6 +47,7 @@ const SchemaGenerator: React.FC<SchemaGeneratorProps> = ({ mode = 'create' }) =>
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [appNameError, setAppNameError] = useState<string | null>(null);
 
   // 入力方法の設定
   const [fileUploadEnabled, setFileUploadEnabled] = useState(true);
@@ -92,6 +93,21 @@ const SchemaGenerator: React.FC<SchemaGeneratorProps> = ({ mode = 'create' }) =>
     if (fileInputRef.current) {
       fileInputRef.current.click();
     }
+  };
+
+  // アプリ名のバリデーション
+  const validateAppName = (name: string): boolean => {
+    if (!name) {
+      setAppNameError("アプリ名は必須です");
+      return false;
+    }
+    // 新規作成モードのみ重複チェック
+    if (isCreateMode && apps.find(app => app.name === name)) {
+      setAppNameError("このアプリ名は既に使用されています");
+      return false;
+    }
+    setAppNameError(null);
+    return true;
   };
 
   // ファイル選択時の処理
@@ -220,6 +236,13 @@ const SchemaGenerator: React.FC<SchemaGeneratorProps> = ({ mode = 'create' }) =>
       return;
     }
 
+    // アプリ名の検証
+    if (!validateAppName(appName)) {
+      setError(appNameError || "アプリ名が無効です");
+      setSuccessMessage(null);
+      return;
+    }
+
     setIsSaving(true);
     setError(null);
     setSuccessMessage(null);
@@ -341,7 +364,7 @@ const SchemaGenerator: React.FC<SchemaGeneratorProps> = ({ mode = 'create' }) =>
               <button
                 onClick={saveSchema}
                 className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
-                disabled={isSaving}
+                disabled={isSaving || !!appNameError}
               >
                 {isSaving ? "保存中..." : "保存"}
               </button>
@@ -391,10 +414,14 @@ const SchemaGenerator: React.FC<SchemaGeneratorProps> = ({ mode = 'create' }) =>
                     type="text"
                     value={appName}
                     onChange={(e) => setAppName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onBlur={(e) => validateAppName(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                     placeholder="invoice_processor"
-                    disabled={isViewMode}
+                    disabled={isViewMode || isEditMode}
                   />
+                  {appNameError && (
+                    <p className="mt-1 text-sm text-red-600">{appNameError}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">

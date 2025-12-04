@@ -6,7 +6,8 @@ import { useAppContext } from "../components/AppContext";
 import FileList from "../components/FileList";
 import OcrActionBar from "../components/OcrActionBar";
 import S3SyncModal from "../components/S3SyncModal";
-import CustomPromptModal from "../components/CustomPromptModal"; // 追加
+import CustomPromptModal from "../components/CustomPromptModal";
+import ConfirmModal from "../components/ConfirmModal";
 
 function Upload() {
   const { appName } = useParams<{ appName: string }>();
@@ -21,8 +22,9 @@ function Upload() {
     [key: string]: number;
   }>({});
   const [s3SyncModalOpen, setS3SyncModalOpen] = useState(false);
-  const [customPromptModalOpen, setCustomPromptModalOpen] = useState(false); // 追加
-  const [pageProcessingMode, setPageProcessingMode] = useState<'combined' | 'individual'>('combined'); // 追加
+  const [customPromptModalOpen, setCustomPromptModalOpen] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [pageProcessingMode, setPageProcessingMode] = useState<'combined' | 'individual'>('combined');
 
   // 現在選択されているアプリの情報
   const selectedApp = apps.find(app => app.name === appName);
@@ -90,6 +92,17 @@ function Upload() {
   // カスタムプロンプトモーダルを閉じる
   const closeCustomPromptModal = () => {
     setCustomPromptModalOpen(false);
+  };
+
+  // アプリ削除を実行
+  const executeDelete = async () => {
+    try {
+      await api.delete(`/apps/${appName}`);
+      await refreshApps();
+      navigate('/');
+    } catch (err: any) {
+      setError(`削除に失敗しました: ${err.message}`);
+    }
   };
 
   // S3ファイルインポート完了時の処理
@@ -283,22 +296,7 @@ function Upload() {
               
               {/* 削除ボタン */}
               <button
-                onClick={() => {
-                  if (window.confirm(`アプリ「${appDisplayName || appName}」を削除してもよろしいですか？`)) {
-                    // 削除APIを呼び出す
-                    api.delete(`/apps/${appName}`)
-                      .then(() => {
-                        // AppContextのアプリ一覧を更新
-                        refreshApps().then(() => {
-                          // 成功したらトップページに戻る
-                          navigate('/');
-                        });
-                      })
-                      .catch(err => {
-                        setError(`削除に失敗しました: ${err.message}`);
-                      });
-                  }
-                }}
+                onClick={() => setShowDeleteConfirm(true)}
                 className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg flex items-center"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -530,6 +528,17 @@ function Upload() {
         isOpen={customPromptModalOpen}
         onClose={closeCustomPromptModal}
         appName={appName || ""}
+      />
+
+      {/* 削除確認モーダル */}
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={executeDelete}
+        title="アプリの削除"
+        message={`アプリ「${appDisplayName || appName}」を削除してもよろしいですか？`}
+        confirmText="削除"
+        cancelText="キャンセル"
       />
     </div>
   );

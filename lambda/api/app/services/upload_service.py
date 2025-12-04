@@ -20,8 +20,6 @@ logger = logging.getLogger(__name__)
 
 # 共通のS3クライアントを使用
 
-DEFAULT_APP = "default"
-
 
 class UploadService:
     """アップロード処理を管理するサービスクラス"""
@@ -41,9 +39,8 @@ class UploadService:
                     break
 
             if not valid_app:
-                logger.warning(
-                    f"Invalid app name: {request.app_name}, using default: {DEFAULT_APP}")
-                request.app_name = DEFAULT_APP
+                logger.error(f"Invalid app name: {request.app_name}")
+                raise ValueError(f"Invalid app name: {request.app_name}")
 
             # アプリケーションの入力方法設定を取得
             input_methods = get_app_input_methods(request.app_name)

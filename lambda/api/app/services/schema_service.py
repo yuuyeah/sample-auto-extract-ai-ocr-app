@@ -130,6 +130,11 @@ class SchemaService:
             if not re.match(r'^[a-zA-Z0-9_]+$', request.name):
                 raise ValueError("アプリ名は英数字とアンダースコアのみ使用できます")
 
+            # 既存チェック（新規作成時のみ）
+            existing_schema = get_app_schema(request.name)
+            if existing_schema:
+                raise ValueError(f"アプリ名 '{request.name}' は既に使用されています")
+
             # 入力方法のバリデーション
             if not request.input_methods.get("file_upload", False) and not request.input_methods.get("s3_sync", False):
                 raise ValueError("ファイルアップロードまたはS3同期のいずれかを有効にする必要があります")

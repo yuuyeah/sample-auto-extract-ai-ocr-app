@@ -24,7 +24,6 @@ from .job_repository import (
     delete_jobs_by_app_name,
 )
 from .schema_repository import (
-    DEFAULT_APP,
     load_app_schemas,
     get_app_schemas,
     get_app_schema,
@@ -59,7 +58,6 @@ __all__ = [
     "get_images_by_job_id",
     "delete_jobs_by_app_name",
     # Schema operations
-    "DEFAULT_APP",
     "load_app_schemas",
     "get_app_schemas",
     "get_app_schema",
