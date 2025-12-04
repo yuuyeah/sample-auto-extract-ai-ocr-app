@@ -1,5 +1,4 @@
 from routers.extraction import set_background_task as set_extraction_background_task
-from routers.ocr import set_background_task
 from routers.agent import set_background_task as set_agent_background_task
 from background import BackgroundTaskExtension
 import logging
@@ -38,7 +37,6 @@ app.include_router(s3_sync.router)
 app.include_router(agent.router)
 
 # バックグラウンドタスクをサービスに注入
-set_background_task(background_task)
 set_extraction_background_task(background_task)
 set_agent_background_task(background_task)
 

@@ -7,6 +7,7 @@ import { Web } from "./constructs/web";
 import { Database } from "./constructs/database";
 import { Ocr } from "./constructs/ocr";
 import { Agent } from "./constructs/agent";
+import { StepFunctions } from "./constructs/step-functions";
 
 export class OcrAppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -53,12 +54,38 @@ export class OcrAppStack extends cdk.Stack {
       agentRuntimeArn: agent?.runtimeArn,
     });
 
+    // Step Functions追加
+    const stepFunctions = new StepFunctions(this, "StepFunctions", {
+      imagesTable: database.imagesTable,
+      jobsTable: database.jobsTable,
+      schemasTable: database.schemasTable,
+      documentBucket: api.documentBucket,
+      enableOcr,
+      sagemakerEndpointName: ocrEndpoint?.endpointName,
+      sagemakerInferenceComponentName: ocrEndpoint?.inferenceComponentName,
+    });
+
+    // API LambdaにStep Functions実行権限を付与
+    stepFunctions.stateMachine.grantStartExecution(api.handler);
+
+    // 環境変数追加
+    api.handler.addEnvironment(
+      "STATE_MACHINE_ARN",
+      stepFunctions.stateMachine.stateMachineArn
+    );
+
     new Web(this, "WebConstruct", {
       buildFolder: "/dist",
       userPoolId: auth.userPool.userPoolId,
       userPoolClientId: auth.client.userPoolClientId,
       apiUrl: api.apiEndpoint,
       enableOcr: enableOcr,
+    });
+
+    // 出力
+    new cdk.CfnOutput(this, "StateMachineArn", {
+      value: stepFunctions.stateMachine.stateMachineArn,
+      description: "OCR Step Functions State Machine ARN",
     });
   }
 }

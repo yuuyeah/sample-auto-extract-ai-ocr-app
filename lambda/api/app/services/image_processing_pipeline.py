@@ -1,7 +1,6 @@
 """
 画像処理パイプライン
 OCR→情報抽出の完全フローを管理
-アップロードされた画像に対してOCR処理と情報抽出を順次実行
 """
 import logging
 from services.ocr_service import OcrService
@@ -28,10 +27,8 @@ class ImageProcessingPipeline:
             # 2. 情報抽出処理
             self.extraction_service.extract_information(image_id)
 
-            logger.info(
-                f"Successfully completed pipeline for image {image_id}")
+            logger.info(f"Successfully completed pipeline for image {image_id}")
 
         except Exception as e:
             logger.error(f"Pipeline failed for {image_id}: {e}")
-            # 既存ロジックに合わせて、エラーハンドリングは各サービス内で実行済み
             raise

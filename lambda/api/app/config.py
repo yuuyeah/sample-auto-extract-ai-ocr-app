@@ -32,6 +32,9 @@ class Settings:
     
     # Agent設定
     AGENT_RUNTIME_ARN: str = os.getenv("AGENT_RUNTIME_ARN", "")
+    
+    # Step Functions設定
+    STATE_MACHINE_ARN: str = os.getenv("STATE_MACHINE_ARN", "")
 
 
 # グローバル設定インスタンス

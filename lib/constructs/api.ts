@@ -1,10 +1,4 @@
-import {
-  Duration,
-  RemovalPolicy,
-  Stack,
-  StackProps,
-  CfnOutput,
-} from "aws-cdk-lib";
+import { Duration, RemovalPolicy, CfnOutput } from "aws-cdk-lib";
 import { Construct } from "constructs";
 import {
   BlockPublicAccess,
@@ -18,14 +12,7 @@ import {
   ServicePrincipal,
   ManagedPolicy,
 } from "aws-cdk-lib/aws-iam";
-import {
-  Runtime,
-  Architecture,
-  DockerImageCode,
-  DockerImageFunction,
-  FunctionUrl,
-  FunctionUrlAuthType,
-} from "aws-cdk-lib/aws-lambda";
+import { DockerImageCode, DockerImageFunction } from "aws-cdk-lib/aws-lambda";
 import {
   RestApi,
   LambdaIntegration,
@@ -53,6 +40,8 @@ export interface ApiProps {
 
 export class Api extends Construct {
   public readonly apiEndpoint: string;
+  public readonly documentBucket: Bucket;
+  public readonly handler: DockerImageFunction;
 
   constructor(scope: Construct, id: string, props: ApiProps) {
     super(scope, id);
@@ -62,7 +51,7 @@ export class Api extends Construct {
     // cdk.jsonからモデルIDとリージョンを取得
     const modelId =
       this.node.tryGetContext("model_id") ||
-      "anthropic.claude-3-5-sonnet-20240620-v1:0";
+      "us.anthropic.claude-sonnet-4-20250514-v1:0";
     const modelRegion = this.node.tryGetContext("model_region") || "us-east-1";
 
     // S3バケット（ドキュメント保存用）
@@ -176,6 +165,10 @@ export class Api extends Construct {
       },
       role: lambdaRole,
     });
+
+    // プロパティに保存
+    this.handler = lambdaFunction;
+    this.documentBucket = documentBucket;
 
     // AgentRuntime呼び出し権限
     if (props.agentRuntimeArn) {
