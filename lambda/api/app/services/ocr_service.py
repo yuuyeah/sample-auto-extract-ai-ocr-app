@@ -4,7 +4,7 @@ from typing import Optional, Dict, Any
 from abc import ABC, abstractmethod
 
 from repositories import (
-    create_job, get_images, get_job, get_images_by_job_id,
+    get_images, get_job,
     get_image, update_ocr_result as db_update_ocr_result,
     update_image_status
 )
@@ -111,14 +111,6 @@ class OcrService:
 
         except Exception as e:
             logger.error(f"OCRジョブの開始エラー: {str(e)}")
-            raise
-
-    async def get_job_status(self, job_id: str) -> Dict[str, Any]:
-        """ジョブステータスを取得する"""
-        try:
-            return get_job(job_id)
-        except Exception as e:
-            logger.error(f"Error getting job status: {str(e)}")
             raise
 
     async def get_ocr_result(self, image_id: str) -> OcrResultResponse:

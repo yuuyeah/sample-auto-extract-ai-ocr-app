@@ -286,6 +286,13 @@ const SchemaGenerator: React.FC<SchemaGeneratorProps> = ({ mode = 'create' }) =>
       } else {
         await api.post("/schema/save", finalSchema);
         setSuccessMessage("ユースケースを作成しました");
+        
+        // 新規作成時はホーム画面に遷移
+        await refreshApps();
+        setTimeout(() => {
+          navigate("/");
+        }, 500);
+        return;
       }
 
       // AppContextのアプリ一覧を更新
@@ -366,7 +373,7 @@ const SchemaGenerator: React.FC<SchemaGeneratorProps> = ({ mode = 'create' }) =>
                 className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
                 disabled={isSaving || !!appNameError}
               >
-                {isSaving ? "保存中..." : "保存"}
+                {isSaving ? (isCreateMode ? "作成中..." : "保存中...") : (isCreateMode ? "作成" : "保存")}
               </button>
               <button
                 onClick={() => {

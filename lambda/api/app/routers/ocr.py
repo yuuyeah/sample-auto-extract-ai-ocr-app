@@ -8,7 +8,7 @@ from schemas import (
     OcrResultResponse, OcrStartRequest, JobStartResponse, OcrResult
 )
 from services.ocr_service import OcrService
-from repositories import create_job, get_images, update_image_status
+from repositories import get_images, update_image_status
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -42,10 +42,7 @@ async def start_ocr(request: OcrStartRequest = OcrStartRequest()):
         for img in pending_images:
             update_image_status(img['id'], 'processing', job_id)
         
-        # 3. ジョブ作成
-        create_job(job_id, 'processing')
-        
-        # 4. Step Functions起動
+        # 3. Step Functions起動
         execution_response = sfn_client.start_execution(
             stateMachineArn=settings.STATE_MACHINE_ARN,
             name=f"ocr-job-{job_id}",
@@ -61,17 +58,6 @@ async def start_ocr(request: OcrStartRequest = OcrStartRequest()):
         
     except Exception as e:
         logger.error(f"OCR job start error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-
-
-@router.get("/status/{job_id}")
-async def get_ocr_status(job_id: str):
-    """OCRジョブのステータスを取得する"""
-    try:
-        status = await ocr_service.get_job_status(job_id)
-        return status
-    except Exception as e:
-        logger.error(f"Error getting job status: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
@@ -105,9 +91,6 @@ async def start_ocr_for_image(image_id: str):
         
         # ステータスをprocessingに更新
         update_image_status(image_id, 'processing', job_id)
-        
-        # ジョブ作成
-        create_job(job_id, 'processing')
         
         # Step Functions起動（単一画像）
         execution_response = sfn_client.start_execution(

@@ -15,9 +15,33 @@ interface GroupedFiles {
   standaloneFiles: ImageFile[];
 }
 
+type SortField = 'uploadTime' | 'status' | 'name';
+
 const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
   const navigate = useNavigate();
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  const sortField: SortField = 'uploadTime';
+
+  const sortFiles = (fileList: ImageFile[]) => {
+    return [...fileList].sort((a, b) => {
+      let aValue: any = a[sortField];
+      let bValue: any = b[sortField];
+
+      // 値が存在しない場合の処理
+      if (!aValue) aValue = '';
+      if (!bValue) bValue = '';
+
+      // 文字列比較（降順）
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return -aValue.localeCompare(bValue);
+      }
+
+      // 数値比較（降順）
+      if (aValue < bValue) return 1;
+      if (aValue > bValue) return -1;
+      return 0;
+    });
+  };
 
   // 結果表示ボタンのクリックハンドラ
   const handleViewResult = (id: string) => {
@@ -37,12 +61,8 @@ const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
 
   // ファイルをグループ化
   const groupFiles = (files: ImageFile[]): GroupedFiles => {
-    // まず全体を時間順にソート（新しい順）
-    const sortedFiles = [...files].sort((a, b) => {
-      const timeA = new Date(a.uploadTime || 0).getTime();
-      const timeB = new Date(b.uploadTime || 0).getTime();
-      return timeB - timeA; // 降順（新しい順）
-    });
+    // ソート適用
+    const sortedFiles = sortFiles(files);
 
     const parentDocuments: ImageFile[] = [];
     const childPages: { [parentId: string]: ImageFile[] } = {};
@@ -72,12 +92,49 @@ const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
     return { parentDocuments, childPages, standaloneFiles };
   };
 
-  const groupedFiles = groupFiles(files);
+  // 表示用に全ファイルを統合（親ファイルと通常ファイルを混在させる）
+  const getMergedFilesForDisplay = () => {
+    const grouped = groupFiles(files);
+    const merged: Array<{ type: 'parent' | 'standalone', file: ImageFile }> = [];
+    
+    // 親ファイルと通常ファイルを統合
+    [...grouped.parentDocuments, ...grouped.standaloneFiles].forEach(file => {
+      if (file.pageProcessingMode === 'individual' && !file.parentDocumentId && (file.totalPages || 0) > 1) {
+        merged.push({ type: 'parent', file });
+      } else {
+        merged.push({ type: 'standalone', file });
+      }
+    });
+    
+    // ユーザー選択のソートフィールドでソート
+    merged.sort((a, b) => {
+      let aValue: any = a.file[sortField];
+      let bValue: any = b.file[sortField];
+
+      // 値が存在しない場合の処理
+      if (!aValue) aValue = '';
+      if (!bValue) bValue = '';
+
+      // 文字列比較（降順）
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return -aValue.localeCompare(bValue);
+      }
+
+      // 数値比較（降順）
+      if (aValue < bValue) return 1;
+      if (aValue > bValue) return -1;
+      return 0;
+    });
+    
+    return { merged, childPages: grouped.childPages };
+  };
+
+  const { merged: mergedFiles, childPages } = getMergedFilesForDisplay();
   const totalFiles = files.length;
 
   // 親ドキュメントの進捗状況を計算
   const getParentProgress = (parentId: string) => {
-    const children = groupedFiles.childPages[parentId] || [];
+    const children = childPages[parentId] || [];
     const completed = children.filter(child => child.status === 'completed').length;
     const total = children.length;
     return { completed, total };
@@ -85,7 +142,7 @@ const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
 
   // 親ドキュメントの全体ステータスを取得
   const getParentOverallStatus = (parentId: string) => {
-    const children = groupedFiles.childPages[parentId] || [];
+    const children = childPages[parentId] || [];
     if (children.length === 0) return 'pending';
     
     const statuses = children.map(child => child.status);
@@ -112,53 +169,63 @@ const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
           </div>
           
           <div className="space-y-2">
-            {/* 親ドキュメント（個別処理） */}
-            {groupedFiles.parentDocuments.map((parentFile) => {
-              const isExpanded = expandedParents.has(parentFile.id);
-              const children = groupedFiles.childPages[parentFile.id] || [];
-              const progress = getParentProgress(parentFile.id);
-              const overallStatus = getParentOverallStatus(parentFile.id);
-              
-              return (
-                <div key={parentFile.id} className="border border-gray-200 rounded-lg">
-                  {/* 親ドキュメント行 */}
-                  <div 
-                    className="flex items-center p-4 cursor-pointer hover:bg-gray-50"
-                    onClick={() => toggleParentExpansion(parentFile.id)}
-                  >
-                    <div className="flex items-center flex-1">
-                      {/* 展開/折りたたみアイコン */}
-                      <svg 
-                        xmlns="http://www.w3.org/2000/svg" 
-                        className={`h-4 w-4 mr-2 transform transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                        fill="none" 
-                        viewBox="0 0 24 24" 
-                        stroke="currentColor"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                      
-                      {/* ファイルアイコン */}
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-red-500" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
-                      </svg>
+            {/* 親ドキュメントと通常ファイルを統合して表示 */}
+            {mergedFiles.map(({ type, file }) => {
+              if (type === 'parent') {
+                // 親ドキュメント（個別処理）
+                const isExpanded = expandedParents.has(file.id);
+                const children = childPages[file.id] || [];
+                const progress = getParentProgress(file.id);
+                const overallStatus = getParentOverallStatus(file.id);
+                
+                return (
+                  <div key={file.id} className="border border-gray-200 rounded-lg">
+                    {/* 親ドキュメント行 */}
+                    <div 
+                      className="flex items-center p-4 cursor-pointer hover:bg-gray-50"
+                      onClick={() => toggleParentExpansion(file.id)}
+                    >
+                      {/* アイコンエリア: 固定幅 */}
+                      <div className="w-12 flex-shrink-0 flex items-center">
+                        {/* 展開/折りたたみアイコン */}
+                        <svg 
+                          xmlns="http://www.w3.org/2000/svg" 
+                          className={`h-4 w-4 mr-1 transform transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                          fill="none" 
+                          viewBox="0 0 24 24" 
+                          stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                        
+                        {/* ファイルアイコン */}
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
+                        </svg>
+                      </div>
                       
                       {/* ファイル名と情報 */}
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900">{parentFile.name}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900">{file.name}</div>
                         <div className="text-sm text-gray-500">
-                          個別処理 - {parentFile.totalPages}ページ ({progress.completed}/{progress.total} 完了)
+                          個別処理 - {file.totalPages}ページ ({progress.completed}/{progress.total} 完了)
                         </div>
                       </div>
-                    </div>
                     
                     {/* アップロード日時 */}
-                    <div className="text-sm text-gray-500 mr-4">
-                      {formatDateTimeJST(parentFile.uploadTime)}
+                    <div className="w-40 flex-shrink-0 text-sm text-gray-500">
+                      {formatDateTimeJST(file.uploadTime)}
                     </div>
                     
                     {/* 全体ステータス */}
-                    <StatusBadge status={overallStatus} />
+                    <div className="w-24 flex-shrink-0">
+                      <StatusBadge status={overallStatus} />
+                    </div>
+                    
+                    {/* 操作ボタン（空白でスペース確保） */}
+                    <div className="text-sm w-20 flex-shrink-0">
+                      <span className="text-gray-400">-</span>
+                    </div>
                   </div>
                   
                   {/* 子ページ一覧 */}
@@ -172,24 +239,24 @@ const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
                           </svg>
                           
                           {/* ページ情報 */}
-                          <div className="flex-1">
+                          <div className="flex-1 min-w-0">
                             <div className="text-sm font-medium text-gray-700">
                               {childFile.name} (ページ {childFile.pageNumber}/{childFile.totalPages})
                             </div>
                           </div>
                           
                           {/* アップロード日時 */}
-                          <div className="text-sm text-gray-500 mr-4">
+                          <div className="w-40 flex-shrink-0 text-sm text-gray-500">
                             {formatDateTimeJST(childFile.uploadTime)}
                           </div>
                           
                           {/* ステータス */}
-                          <div className="mr-4">
+                          <div className="w-24 flex-shrink-0">
                             <StatusBadge status={childFile.status} />
                           </div>
                           
                           {/* 操作ボタン */}
-                          <div className="text-sm">
+                          <div className="text-sm w-20 flex-shrink-0">
                             {childFile.status === 'completed' ? (
                               <button 
                                 onClick={() => handleViewResult(childFile.id)} 
@@ -207,64 +274,68 @@ const FileList: React.FC<FileListProps> = ({ files, onRefresh }) => {
                   )}
                 </div>
               );
-            })}
-            
-            {/* 通常ファイル（統合処理・既存データ） */}
-            {groupedFiles.standaloneFiles.map((file) => (
-              <div key={file.id} className="border border-gray-200 rounded-lg p-4">
-                <div className="flex items-center">
-                  {/* ファイルアイコン */}
-                  <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 mr-2 ${file.name.toLowerCase().endsWith('.pdf') ? 'text-red-500' : 'text-blue-500'}`} viewBox="0 0 20 20" fill="currentColor">
-                    {file.name.toLowerCase().endsWith('.pdf') ? (
-                      <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
-                    ) : (
-                      <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
-                    )}
-                  </svg>
-                  
-                  {/* ファイル名と処理情報 */}
-                  <div className="flex-1">
-                    <div className="font-medium text-gray-900">{file.name}</div>
-                    <div className="text-sm text-gray-500">
-                      {file.pageProcessingMode === 'combined' ? (
-                        <span>
-                          統合処理
-                          {file.totalPages && file.totalPages > 1 && ` - ${file.totalPages}ページ`}
-                        </span>
-                      ) : file.pageProcessingMode === 'individual' && file.totalPages === 1 ? (
-                        <span>1ページ</span>
-                      ) : (
-                        <span>-</span>
-                      )}
+              } else {
+                // 通常ファイル（統合処理・既存データ）
+                return (
+                  <div key={file.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center">
+                      {/* アイコンエリア: 固定幅 */}
+                      <div className="w-12 flex-shrink-0 flex items-center justify-center">
+                        {/* ファイルアイコン */}
+                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ${file.name.toLowerCase().endsWith('.pdf') ? 'text-red-500' : 'text-blue-500'}`} viewBox="0 0 20 20" fill="currentColor">
+                          {file.name.toLowerCase().endsWith('.pdf') ? (
+                            <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
+                          ) : (
+                            <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
+                          )}
+                        </svg>
+                      </div>
+                      
+                      {/* ファイル名と処理情報 */}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900">{file.name}</div>
+                        <div className="text-sm text-gray-500">
+                          {file.pageProcessingMode === 'combined' ? (
+                            <span>
+                              統合処理
+                              {file.totalPages && file.totalPages > 1 && ` - ${file.totalPages}ページ`}
+                            </span>
+                          ) : file.pageProcessingMode === 'individual' && file.totalPages === 1 ? (
+                            <span>1ページ</span>
+                          ) : (
+                            <span>-</span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* アップロード日時 */}
+                      <div className="w-40 flex-shrink-0 text-sm text-gray-500">
+                        {formatDateTimeJST(file.uploadTime)}
+                      </div>
+                      
+                      {/* ステータス */}
+                      <div className="w-24 flex-shrink-0">
+                        <StatusBadge status={file.status} />
+                      </div>
+                      
+                      {/* 操作ボタン */}
+                      <div className="text-sm w-20 flex-shrink-0">
+                        {file.status === 'completed' ? (
+                          <button 
+                            onClick={() => handleViewResult(file.id)} 
+                            className="text-blue-600 hover:text-blue-900"
+                          >
+                            結果表示
+                          </button>
+                        ) : (
+                          <span className="text-gray-400">処理待ち</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  
-                  {/* アップロード日時 */}
-                  <div className="text-sm text-gray-500 mr-4">
-                    {formatDateTimeJST(file.uploadTime)}
-                  </div>
-                  
-                  {/* ステータス */}
-                  <div className="mr-4">
-                    <StatusBadge status={file.status} />
-                  </div>
-                  
-                  {/* 操作ボタン */}
-                  <div className="text-sm">
-                    {file.status === 'completed' ? (
-                      <button 
-                        onClick={() => handleViewResult(file.id)} 
-                        className="text-blue-600 hover:text-blue-900"
-                      >
-                        結果表示
-                      </button>
-                    ) : (
-                      <span className="text-gray-400">処理待ち</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
+                );
+              }
+            })}
           </div>
         </>
       ) : (

@@ -11,7 +11,7 @@ from config import settings
 from repositories import (
     get_app_schemas, get_app_schema, get_extraction_fields_for_app,
     get_field_names_for_app, get_custom_prompt_for_app, update_app_schema,
-    delete_app_schema
+    delete_app_schema, delete_images_by_app_name
 )
 from domains.schema_generator import generate_schema_fields_from_image
 
@@ -112,8 +112,13 @@ class SchemaService:
     async def delete_app(self, app_name: str) -> None:
         """アプリを削除する"""
         try:
+            # 1. 関連する画像データを削除
+            delete_images_by_app_name(app_name)
+            
+            # 2. スキーマを削除
             delete_app_schema(app_name)
-            logger.info(f"Deleted app: {app_name}")
+            
+            logger.info(f"Deleted app and related images: {app_name}")
         except Exception as e:
             logger.error(f"Error deleting app: {str(e)}")
             raise

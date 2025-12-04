@@ -17,11 +17,7 @@ from .image_repository import (
     check_and_update_parent_status,
 )
 from .job_repository import (
-    create_job,
     get_job,
-    update_job_status,
-    get_images_by_job_id,
-    delete_jobs_by_app_name,
 )
 from .schema_repository import (
     load_app_schemas,
@@ -52,11 +48,7 @@ __all__ = [
     "determine_parent_status",
     "check_and_update_parent_status",
     # Job operations
-    "create_job",
     "get_job",
-    "update_job_status",
-    "get_images_by_job_id",
-    "delete_jobs_by_app_name",
     # Schema operations
     "load_app_schemas",
     "get_app_schemas",
