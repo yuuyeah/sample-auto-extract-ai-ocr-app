@@ -165,6 +165,14 @@ class UploadService:
                     )
                 else:
                     logger.info("リサイズは不要です。元の画像を使用します。")
+                    # リサイズ不要でも元の画像をconverted_s3_keyとして設定
+                    update_converted_image(
+                        request.image_id,
+                        request.s3_key,
+                        "pending",
+                        orig_size,
+                        orig_size
+                    )
             except ImportError:
                 logger.info(
                     "resize_image function not available, skipping resize")
