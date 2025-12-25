@@ -18,13 +18,19 @@ logger = logging.getLogger(__name__)
 
 class ToolManager:
     """Manages tools for the agent"""
-    
+
     def __init__(self):
         region = os.environ.get('AWS_REGION')
         self.dynamodb = boto3.resource('dynamodb', region_name=region)
         self.customers_table_name = os.environ.get('CUSTOMERS_TABLE', '')
         self.mcp_tools = None
-    
+        
+        # テーブルを事前に初期化
+        if self.customers_table_name:
+            self.customers_table = self.dynamodb.Table(self.customers_table_name)
+        else:
+            self.customers_table = None
+
     def load_mcp_tools(self) -> list[Any]:
         """Load MCP tools from mcp.json"""
         if self.mcp_tools is not None:
@@ -69,277 +75,245 @@ class ToolManager:
             logger.error(f"Error loading MCP tools: {e}")
             self.mcp_tools = []
             return self.mcp_tools
-    
-    def get_customer_search_tools(self) -> list[Any]:
-        """Get customer search tools"""
-        if not self.customers_table_name:
-            logger.warning("CUSTOMERS_TABLE not set. Customer search tools disabled.")
-            return []
+
+    @tool
+    def search_customer_by_id(self, customer_id: str) -> dict:
+        """顧客IDで顧客情報を検索
         
-        table = self.dynamodb.Table(self.customers_table_name)
-        
-        @tool
-        def search_customer_by_id(customer_id: str) -> dict:
-            """顧客IDで顧客情報を検索
+        Args:
+            customer_id: 顧客ID
             
-            Args:
-                customer_id: 顧客ID
-                
-            Returns:
-                顧客情報（customer_id, customer_name, postal_code, address, phone, email, contact_person）
-            """
-            try:
-                response = table.get_item(Key={'customer_id': customer_id})
-                item = response.get('Item', {})
-                if item:
-                    logger.info(f"Found customer: {customer_id}")
-                    return item
+        Returns:
+            顧客情報（customer_id, customer_name, postal_code, address, phone, email, contact_person）
+        """
+        if not self.customers_table:
+            return {"error": "CUSTOMERS_TABLE not configured"}
+            
+        try:
+            response = self.customers_table.get_item(Key={'customer_id': customer_id})
+            item = response.get('Item', {})
+            if item:
+                logger.info(f"Found customer: {customer_id}")
+                return item
+            else:
+                logger.info(f"Customer not found: {customer_id}")
+                return {}
+        except Exception as e:
+            logger.error(f"Error searching customer by ID: {e}")
+            return {"error": str(e)}
+
+    @tool
+    def search_customer_by_name(self, customer_name: str) -> list[dict]:
+        """顧客名で顧客情報を検索（部分一致）
+        
+        Args:
+            customer_name: 顧客名
+            
+        Returns:
+            顧客情報のリスト（各要素: customer_id, customer_name, postal_code, address, phone, email, contact_person）
+        """
+        if not self.customers_table:
+            return [{"error": "CUSTOMERS_TABLE not configured"}]
+            
+        try:
+            response = self.customers_table.scan(
+                FilterExpression=Attr('customer_name').contains(customer_name)
+            )
+            items = response.get('Items', [])
+            logger.info(f"Found {len(items)} customers matching '{customer_name}'")
+            return items
+        except Exception as e:
+            logger.error(f"Error searching customer by name: {e}")
+            return [{"error": str(e)}]
+
+    @tool
+    def verify_unit_price_calculation(self, quantity: float, unit_price: float, expected_amount: float) -> dict:
+        """単価計算の検算
+        
+        Args:
+            quantity: 数量
+            unit_price: 単価
+            expected_amount: 期待される金額
+            
+        Returns:
+            検算結果（is_correct: bool, calculated_amount: float, message: str）
+        """
+        try:
+            calculated_amount = quantity * unit_price
+            is_correct = abs(calculated_amount - expected_amount) < 0.01
+            
+            result = {
+                "is_correct": is_correct,
+                "calculated_amount": calculated_amount,
+                "expected_amount": expected_amount,
+                "quantity": quantity,
+                "unit_price": unit_price
+            }
+            
+            if is_correct:
+                result["message"] = "単価計算は正しいです"
+            else:
+                result["message"] = f"単価計算が間違っています。{quantity} × {unit_price} = {calculated_amount}"
+            
+            logger.info(f"単価検算: {quantity} × {unit_price} = {calculated_amount}, 期待値: {expected_amount}, 正しい: {is_correct}")
+            return result
+        except Exception as e:
+            logger.error(f"単価検算エラー: {e}")
+            return {"error": str(e)}
+
+    @tool
+    def verify_subtotal_calculation(self, amounts: list[float], expected_subtotal: float) -> dict:
+        """小計計算の検算
+        
+        Args:
+            amounts: 金額のリスト
+            expected_subtotal: 期待される小計
+            
+        Returns:
+            検算結果（is_correct: bool, calculated_subtotal: float, message: str）
+        """
+        try:
+            calculated_subtotal = sum(amounts)
+            is_correct = abs(calculated_subtotal - expected_subtotal) < 0.01
+            
+            result = {
+                "is_correct": is_correct,
+                "calculated_subtotal": calculated_subtotal,
+                "expected_subtotal": expected_subtotal,
+                "amounts": amounts
+            }
+            
+            if is_correct:
+                result["message"] = "小計の計算は正しいです"
+            else:
+                result["message"] = f"小計が間違っています。{' + '.join(map(str, amounts))} = {calculated_subtotal}"
+            
+            logger.info(f"小計検算: {amounts} = {calculated_subtotal}, 期待値: {expected_subtotal}, 正しい: {is_correct}")
+            return result
+        except Exception as e:
+            logger.error(f"小計検算エラー: {e}")
+            return {"error": str(e)}
+
+    @tool
+    def verify_total_with_tax_calculation(self, subtotal: float, tax_amount: float, expected_total: float) -> dict:
+        """税込み合計計算の検算
+        
+        Args:
+            subtotal: 小計
+            tax_amount: 消費税額
+            expected_total: 期待される税込み合計
+            
+        Returns:
+            検算結果（is_correct: bool, calculated_total: float, message: str）
+        """
+        try:
+            calculated_total = subtotal + tax_amount
+            is_correct = abs(calculated_total - expected_total) < 0.01
+            
+            result = {
+                "is_correct": is_correct,
+                "calculated_total": calculated_total,
+                "expected_total": expected_total,
+                "subtotal": subtotal,
+                "tax_amount": tax_amount
+            }
+            
+            if is_correct:
+                result["message"] = "税込み合計の計算は正しいです"
+            else:
+                result["message"] = f"税込み合計が間違っています。{subtotal} + {tax_amount} = {calculated_total}"
+            
+            logger.info(f"税込み合計検算: {subtotal} + {tax_amount} = {calculated_total}, 期待値: {expected_total}, 正しい: {is_correct}")
+            return result
+        except Exception as e:
+            logger.error(f"税込み合計検算エラー: {e}")
+            return {"error": str(e)}
+
+    @tool
+    def verify_tax_calculation(self, subtotal: float, tax_rate: float, actual_tax_amount: float) -> dict:
+        """消費税計算の検算
+        
+        Args:
+            subtotal: 小計
+            tax_rate: 税率（例: 0.1 for 10%）
+            actual_tax_amount: 実際の消費税額
+            
+        Returns:
+            検算結果（is_correct: bool, calculated_tax: float, message: str）
+        """
+        try:
+            calculated_tax = subtotal * tax_rate
+            is_correct = abs(calculated_tax - actual_tax_amount) < 0.01
+            
+            result = {
+                "is_correct": is_correct,
+                "calculated_tax": calculated_tax,
+                "actual_tax_amount": actual_tax_amount,
+                "subtotal": subtotal,
+                "tax_rate": tax_rate
+            }
+            
+            if is_correct:
+                if calculated_tax != actual_tax_amount:
+                    result["message"] = f"消費税の計算は正しいです（端数処理済み: 理論値{calculated_tax}円 → {actual_tax_amount}円）"
                 else:
-                    logger.info(f"Customer not found: {customer_id}")
-                    return {}
-            except Exception as e:
-                logger.error(f"Error searching customer by ID: {e}")
-                return {"error": str(e)}
-        
-        @tool
-        def search_customer_by_name(customer_name: str) -> list[dict]:
-            """顧客名で顧客情報を検索（部分一致）
+                    result["message"] = "消費税の計算は正しいです"
+            else:
+                result["message"] = f"消費税が間違っています。{subtotal} × {tax_rate} = {calculated_tax}"
             
-            Args:
-                customer_name: 顧客名
-                
-            Returns:
-                顧客情報のリスト（各要素: customer_id, customer_name, postal_code, address, phone, email, contact_person）
-            """
-            try:
-                response = table.scan(
-                    FilterExpression=Attr('customer_name').contains(customer_name)
-                )
-                items = response.get('Items', [])
-                logger.info(f"Found {len(items)} customers matching: {customer_name}")
-                return items
-            except Exception as e:
-                logger.error(f"Error searching customer by name: {e}")
-                return [{"error": str(e)}]
+            logger.info(f"消費税検算: {subtotal} × {tax_rate} = {calculated_tax}, 実際: {actual_tax_amount}, 正しい: {is_correct}")
+            return result
+        except Exception as e:
+            logger.error(f"消費税検算エラー: {e}")
+            return {"error": str(e)}
+
+    def get_custom_tools(self) -> list[Any]:
+        """Get all custom tools automatically by inspecting class methods"""
+        tools = []
         
-        return [search_customer_by_id, search_customer_by_name]
-    
-    def get_calculation_verification_tools(self) -> list[Any]:
-        """Get calculation verification tools"""
-        
-        @tool
-        def verify_unit_price_calculation(
-            quantity: float,
-            unit_price: float,
-            actual_amount: float
-        ) -> dict:
-            """単価×個数の計算を検証
-            
-            Args:
-                quantity: 数量
-                unit_price: 単価
-                actual_amount: 実際の金額
+        # クラス内の全メソッドを検査してstrandsのtoolデコレータがついているものを検出
+        for name in dir(self):
+            if name.startswith('_'):  # プライベートメソッドをスキップ
+                continue
                 
-            Returns:
-                検証結果 {"is_correct": bool, "calculated_amount": float, "difference": float, "message": str}
-            """
-            try:
-                calculated_amount = quantity * unit_price
-                difference = abs(calculated_amount - actual_amount)
-                is_correct = difference == 0
+            attr = getattr(self, name)
+            if callable(attr) and hasattr(attr, 'tool_spec'):  # strandsのtoolデコレータがついているかチェック
+                tools.append(attr)
                 
-                result = {
-                    "is_correct": is_correct,
-                    "calculated_amount": calculated_amount,
-                    "actual_amount": actual_amount,
-                    "difference": difference,
-                    "calculation": f"{quantity} × {unit_price} = {calculated_amount}"
-                }
-                
-                if is_correct:
-                    result["message"] = "計算は正しいです"
-                else:
-                    result["message"] = f"計算が間違っています。{quantity} × {unit_price} = {calculated_amount}"
-                
-                logger.info(f"単価×個数検算: {quantity} × {unit_price} = {calculated_amount}, 実際: {actual_amount}, 正しい: {is_correct}")
-                return result
-                
-            except Exception as e:
-                logger.error(f"単価×個数検算エラー: {e}")
-                return {"error": str(e)}
-        
-        @tool
-        def verify_subtotal_calculation(
-            amounts: list[float],
-            actual_subtotal: float
-        ) -> dict:
-            """各項目の合計と小計の計算を検証
-            
-            Args:
-                amounts: 各項目の金額のリスト
-                actual_subtotal: 実際の小計
-                
-            Returns:
-                検証結果 {"is_correct": bool, "calculated_subtotal": float, "difference": float, "message": str}
-            """
-            try:
-                calculated_subtotal = sum(amounts)
-                difference = abs(calculated_subtotal - actual_subtotal)
-                is_correct = difference == 0
-                
-                result = {
-                    "is_correct": is_correct,
-                    "calculated_subtotal": calculated_subtotal,
-                    "actual_subtotal": actual_subtotal,
-                    "difference": difference,
-                    "calculation": " + ".join([str(amount) for amount in amounts]) + f" = {calculated_subtotal}"
-                }
-                
-                if is_correct:
-                    result["message"] = "小計の計算は正しいです"
-                else:
-                    result["message"] = f"小計が間違っています。各項目の合計: {calculated_subtotal}"
-                
-                logger.info(f"小計検算: {amounts} の合計 = {calculated_subtotal}, 実際: {actual_subtotal}, 正しい: {is_correct}")
-                return result
-                
-            except Exception as e:
-                logger.error(f"小計検算エラー: {e}")
-                return {"error": str(e)}
-        
-        @tool
-        def verify_total_with_tax_calculation(
-            subtotal: float,
-            tax_amount: float,
-            actual_total: float
-        ) -> dict:
-            """小計+消費税と総額の計算を検証
-            
-            Args:
-                subtotal: 小計
-                tax_amount: 消費税額
-                actual_total: 実際の総額
-                
-            Returns:
-                検証結果 {"is_correct": bool, "calculated_total": float, "difference": float, "message": str}
-            """
-            try:
-                calculated_total = subtotal + tax_amount
-                difference = abs(calculated_total - actual_total)
-                is_correct = difference == 0
-                
-                result = {
-                    "is_correct": is_correct,
-                    "calculated_total": calculated_total,
-                    "actual_total": actual_total,
-                    "difference": difference,
-                    "calculation": f"{subtotal} + {tax_amount} = {calculated_total}"
-                }
-                
-                if is_correct:
-                    result["message"] = "総額の計算は正しいです"
-                else:
-                    result["message"] = f"総額が間違っています。{subtotal} + {tax_amount} = {calculated_total}"
-                
-                logger.info(f"総額検算: {subtotal} + {tax_amount} = {calculated_total}, 実際: {actual_total}, 正しい: {is_correct}")
-                return result
-                
-            except Exception as e:
-                logger.error(f"総額検算エラー: {e}")
-                return {"error": str(e)}
-        
-        @tool
-        def verify_tax_calculation(
-            subtotal: float,
-            actual_tax_amount: float,
-            tax_rate: float = 0.08
-        ) -> dict:
-            """消費税の計算を検証（端数処理を考慮）
-            
-            Args:
-                subtotal: 小計
-                actual_tax_amount: 実際の消費税額
-                tax_rate: 消費税率（デフォルト8%）
-                
-            Returns:
-                検証結果 {"is_correct": bool, "calculated_tax": float, "difference": float, "message": str}
-            """
-            try:
-                calculated_tax = subtotal * tax_rate
-                difference = abs(calculated_tax - actual_tax_amount)
-                
-                # 消費税計算では端数処理により±1円の誤差が生じる可能性がある
-                # 理論値が小数点以下を含む場合のみ±1円を許容
-                has_decimal = (calculated_tax % 1) != 0
-                tolerance = 1.0 if has_decimal else 0.0
-                
-                is_correct = difference <= tolerance
-                
-                result = {
-                    "is_correct": is_correct,
-                    "calculated_tax": calculated_tax,
-                    "actual_tax_amount": actual_tax_amount,
-                    "difference": difference,
-                    "calculation": f"{subtotal} × {tax_rate} = {calculated_tax}",
-                    "has_decimal": has_decimal
-                }
-                
-                if is_correct:
-                    if has_decimal and difference > 0:
-                        result["message"] = f"消費税の計算は正しいです（端数処理済み: 理論値{calculated_tax}円 → {actual_tax_amount}円）"
-                    else:
-                        result["message"] = "消費税の計算は正しいです"
-                else:
-                    result["message"] = f"消費税が間違っています。{subtotal} × {tax_rate} = {calculated_tax}"
-                
-                logger.info(f"消費税検算: {subtotal} × {tax_rate} = {calculated_tax}, 実際: {actual_tax_amount}, 正しい: {is_correct}")
-                return result
-                
-            except Exception as e:
-                logger.error(f"消費税検算エラー: {e}")
-                return {"error": str(e)}
-        
-        return [
-            verify_unit_price_calculation,
-            verify_subtotal_calculation,
-            verify_total_with_tax_calculation,
-            verify_tax_calculation
-        ]
-    
+        return tools
+
     def get_all_tools(self) -> list[Any]:
         """Get all available tools"""
         mcp_tools = self.load_mcp_tools()
-        customer_tools = self.get_customer_search_tools()
-        calculation_tools = self.get_calculation_verification_tools()
-        
-        all_tools = mcp_tools + customer_tools + calculation_tools
-        logger.info(f"Total tools loaded: {len(all_tools)} (MCP: {len(mcp_tools)}, Custom: {len(customer_tools)}, Calculation: {len(calculation_tools)})")
-        
+        custom_tools = self.get_custom_tools()
+
+        all_tools = mcp_tools + custom_tools
+        logger.info(f"Total tools loaded: {len(all_tools)} (MCP: {len(mcp_tools)}, Custom: {len(custom_tools)})")
+
         return all_tools
-    
-    def get_tool_info_for_registration(self) -> list[dict]:
+
+    async def get_tool_info_for_registration(self) -> list[dict]:
         """Get tool information for DynamoDB registration"""
         tool_info = []
-        
+
         # MCPツール
         mcp_tools = self.load_mcp_tools()
         for client in mcp_tools:
             try:
-                if hasattr(client, 'list_tools_sync'):
-                    tools = client.list_tools_sync()
-                    for tool in tools:
-                        tool_name = tool.tool_spec['name']
-                        description = tool.tool_spec.get('description', '')
+                async with client.session() as session:
+                    await session.initialize()
+                    tools = await session.list_tools()
+                    for tool in tools.tools:
                         tool_info.append({
-                            'name': tool_name,
-                            'description': description
+                            'name': tool.name,
+                            'description': tool.description or ''
                         })
-                        logger.info(f"Found MCP tool: {tool_name}")
+                        logger.info(f"Found MCP tool: {tool.name}")
             except Exception as e:
                 logger.error(f"Error getting MCP tool info: {e}")
-        
-        # カスタムツール
-        custom_tools = self.get_customer_search_tools() + self.get_calculation_verification_tools()
+
+        # カスタムツール（自動検出）
+        custom_tools = self.get_custom_tools()
         for tool in custom_tools:
             tool_name = getattr(tool, '__name__', str(tool))
             tool_doc = getattr(tool, '__doc__', '') or ''
@@ -349,3 +323,5 @@ class ToolManager:
                 'description': description
             })
             logger.info(f"Found custom tool: {tool_name}")
+
+        return tool_info

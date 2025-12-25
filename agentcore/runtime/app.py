@@ -20,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def register_tools_to_dynamodb():
+async def register_tools_to_dynamodb():
     """Register tools to DynamoDB on startup"""
     tools_table_name = os.environ.get("TOOLS_TABLE")
     if not tools_table_name:
@@ -33,7 +33,7 @@ def register_tools_to_dynamodb():
         table = dynamodb.Table(tools_table_name)
         
         agent_manager = AgentManager()
-        tool_info_list = agent_manager.tool_manager.get_tool_info_for_registration()
+        tool_info_list = await agent_manager.tool_manager.get_tool_info_for_registration()
         
         for tool_info in tool_info_list:
             table.put_item(Item={
@@ -53,7 +53,7 @@ def register_tools_to_dynamodb():
 async def lifespan(app: FastAPI):
     """Lifespan event handler"""
     logger.info("Starting OCR Agent Runtime...")
-    register_tools_to_dynamodb()
+    await register_tools_to_dynamodb()
     logger.info("Startup complete")
     yield
     logger.info("Shutting down OCR Agent Runtime...")
