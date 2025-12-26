@@ -1,9 +1,5 @@
 # AutoExtract
 
-> [!Warning]
->
-> このプロジェクトは現在開発途中です。大幅な実装変更の可能性があります。近日中に公開予定の v0 バージョンのリリースをお待ちください。
-
 AutoExtract は OCR + Bedrock を活用した帳票読み取りの AI-OCR ソリューションです。帳票からの情報抽出を半自動化し、人間によるデータ入力チェックをサポートするツールです。
 
 デモ（OCR エンジンとして Yomitoku を使用）
@@ -17,14 +13,6 @@ AutoExtract は OCR + Bedrock を活用した帳票読み取りの AI-OCR ソリ
 ## デプロイ手順
 
 デプロイの際は、事前に Node.js、Docker のインストールが必要です。
-
-### Bedrock モデルのセットアップ
-
-1. AWS コンソールにログインし、Bedrock サービスに移動
-2. リージョンを `バージニア北部（us-east-1）` に変更
-3. 以下のモデルへのアクセスを有効化：
-
-- Anthropic Claude Sonnet 4
 
 #### 使用するモデルの変更
 
@@ -78,7 +66,7 @@ cdk destroy
 
 ## 高精度日本語 OCR エンジンへの変更
 
-デフォルトでは OCR エンジンとして PaddleOCR を利用していますが、高精度の日本語 OCR エンジン「Yomitoku」に切り替えることも可能です。Yomitokuの場合は、[AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-64qkuwrqi4lhi) からサブスクライブした後、利用することが可能です。利用方法としては、[ocr.py](lambda/api/app/ocr.py#L36) における SageMaker Endpoint の呼び出しにおいて、Yomitoku の SageMaker Endpoint を指定します。また、[Inference Component](lambda/api/app/ocr.py#L40) の記述をコメントアウトする必要があります。DeepSeek OCR に切り替えたい場合は、[OCR エンジンへの変更(PaddleOCR or DeepSeek OCR)](#ocr-エンジンへの変更paddleocr-or-deepseek-ocr) をご参照ください。
+デフォルトでは OCR エンジンとして PaddleOCR を利用していますが、高精度の日本語 OCR エンジン「Yomitoku」に切り替えることも可能です。Yomitoku の場合は、[AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-64qkuwrqi4lhi) からサブスクライブした後、利用することが可能です。利用方法としては、[ocr.py](lambda/api/app/ocr.py#L36) における SageMaker Endpoint の呼び出しにおいて、Yomitoku の SageMaker Endpoint を指定します。また、[Inference Component](lambda/api/app/ocr.py#L40) の記述をコメントアウトする必要があります。DeepSeek OCR に切り替えたい場合は、[OCR エンジンへの変更(PaddleOCR or DeepSeek OCR)](#ocr-エンジンへの変更paddleocr-or-deepseek-ocr) をご参照ください。
 
 また、GitHub で公開されている [Yomitoku](https://github.com/kotaro-kinoshita/yomitoku) を利用して、本サンプルを動作させることも可能です。実装例については[こちら](https://github.com/gteu/sample-auto-extract-ai-ocr-app)を参照してください。
 
@@ -129,6 +117,8 @@ VITE_APP_USER_POOL_ID=us-east-2_XXXXXXXXXXXX            # AuthUserPoolId の値
 VITE_APP_REGION=us-east-2                               # リージョン名（デプロイしたリージョン）
 VITE_API_BASE_URL=https://XXXXXXXXXXXX.execute-api.us-east-2.amazonaws.com/prod/   # ApiOcrApiEndpoint の値
 VITE_ENABLE_OCR=true                                    # OCR機能の有効化
+VITE_ENABLE_AGENT=true                                  # Agent機能の有効化
+VITE_SYNC_BUCKET_NAME=XXXXXXXXXXXX                      # S3同期バケット名
 ```
 
 3. ローカル開発サーバーの起動

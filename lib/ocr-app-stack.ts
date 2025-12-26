@@ -19,9 +19,6 @@ export class OcrAppStack extends cdk.Stack {
     // OCRエンジンを取得（デフォルトはpaddle）
     const ocrEngine = this.node.tryGetContext("ocr_engine") ?? "paddle";
 
-    // OCRエンジンを取得（デフォルトはpaddle）
-    const ocrEngine = this.node.tryGetContext("ocr_engine") ?? "paddle";
-
     // Agent有効フラグを取得（デフォルトはfalse）
     const enableAgent = this.node.tryGetContext("enable_agent") ?? false;
     const enableAgentDemo =
@@ -96,6 +93,7 @@ export class OcrAppStack extends cdk.Stack {
       userPoolClientId: auth.client.userPoolClientId,
       apiUrl: api.apiEndpoint,
       enableOcr: enableOcr,
+      enableAgent: enableAgent,
       syncBucketName: api.syncBucket.bucketName,
     });
 

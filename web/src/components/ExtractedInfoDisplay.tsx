@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Field } from '../types/app-schema';
 import { Suggestion, Tool } from '../types/agent';
+import { isAgentEnabled } from '../config';
 
 interface ExtractedInfoDisplayProps {
   extractedInfo: Record<string, any>;
@@ -547,7 +548,7 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
               )}
               
               {/* 区切り線 */}
-              {onRunAgent && (
+              {onRunAgent && isAgentEnabled() && (
                 <>
                   <div className="h-8 w-px bg-gray-300"></div>
                   
