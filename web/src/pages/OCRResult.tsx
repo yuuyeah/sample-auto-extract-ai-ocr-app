@@ -845,10 +845,10 @@ function OcrResult() {
     try {
       setExtractionStatus("processing");
       setPollingAttemptCount(0);
-      showToast("OCR処理を開始しました。完了後、自動的に情報抽出が実行されます。", "info");
+      showToast("情報抽出を開始しました。", "info");
       
-      // 個別画像のOCR処理を開始
-      await api.post(`/ocr/start/${id}`);
+      // 情報抽出のみを実行
+      await api.post(`/ocr/extract/${id}`, { image_id: id });
       
       // 抽出画面に切り替え
       setActiveView("extraction");
@@ -914,11 +914,6 @@ function OcrResult() {
               <span className="text-xl font-semibold text-gray-800 truncate max-w-md">
                 {filename || "画像プレビュー"}
               </span>
-              {isMultipage && (
-                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                  {currentPageIndex + 1}/{totalPages}
-                </span>
-              )}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button

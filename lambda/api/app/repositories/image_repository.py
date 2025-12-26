@@ -1,4 +1,4 @@
-from clients import dynamodb_resource
+from clients import dynamodb_resource, s3_client
 import logging
 from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
@@ -27,7 +27,8 @@ def get_images_table():
 
 
 def create_image_record(image_id, filename, s3_key, app_name="default", status="pending", converted_s3_key=None,
-                        page_processing_mode="combined", total_pages=None, page_number=None, parent_document_id=None):
+                        page_processing_mode="combined", total_pages=None, page_number=None, parent_document_id=None,
+                        sync_source_path=None):
     """
     画像レコードを作成する
 
@@ -42,6 +43,7 @@ def create_image_record(image_id, filename, s3_key, app_name="default", status="
         total_pages (int, optional): 総ページ数
         page_number (int, optional): ページ番号（個別処理の場合）
         parent_document_id (str, optional): 親ドキュメントID（個別処理の場合）
+        sync_source_path (str, optional): S3同期元のパス
 
     Returns:
         str: 作成された画像のID
@@ -70,6 +72,10 @@ def create_image_record(image_id, filename, s3_key, app_name="default", status="
             item["page_number"] = page_number
         if parent_document_id is not None:
             item["parent_document_id"] = parent_document_id
+
+        # S3同期元パスがある場合は追加
+        if sync_source_path is not None:
+            item["sync_source_path"] = sync_source_path
 
         # 変換後のS3キーがある場合は追加
         if converted_s3_key:
@@ -571,3 +577,53 @@ def check_and_update_parent_status(parent_id: str):
 
     except Exception as e:
         logger.error(f"親ステータス更新エラー: {str(e)}")
+
+
+def create_s3_sync_folder(app_name: str) -> None:
+    """S3同期フォルダを作成する"""
+    try:
+        sync_bucket = settings.SYNC_BUCKET_NAME
+        
+        # フォルダ作成用の空オブジェクトを作成
+        folder_key = f"{app_name}/"
+        s3_client.put_object(
+            Bucket=sync_bucket,
+            Key=folder_key,
+            Body=b'',
+            ContentType='application/x-directory'
+        )
+        
+        logger.info(f"Created S3 sync folder: s3://{sync_bucket}/{folder_key}")
+    except Exception as e:
+        logger.warning(f"Failed to create S3 sync folder for {app_name}: {str(e)}")
+        # S3フォルダ作成失敗はアプリ作成を止めない
+
+
+def get_images_by_sync_source(filename: str, sync_source_path: str, app_name: str = None):
+    """
+    ファイル名と同期元パスで既存ファイルを検索する
+
+    Args:
+        filename (str): 検索するファイル名
+        sync_source_path (str): 同期元のS3パス
+        app_name (str, optional): アプリ名でフィルタ
+
+    Returns:
+        list: マッチする画像のリスト
+    """
+    try:
+        table = get_images_table()
+
+        # ファイル名と同期元パスで検索
+        filter_expression = Attr('filename').eq(filename) & Attr('sync_source_path').eq(sync_source_path)
+
+        # アプリ名でのフィルタも追加
+        if app_name:
+            filter_expression = filter_expression & Attr('app_name').eq(app_name)
+
+        response = table.scan(FilterExpression=filter_expression)
+        return response.get('Items', [])
+
+    except Exception as e:
+        logger.error(f"同期元パスでの画像検索エラー: {str(e)}")
+        return []

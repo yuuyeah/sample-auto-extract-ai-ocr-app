@@ -6,6 +6,7 @@ class Settings:
 
     # AWS設定
     BUCKET_NAME: str = os.getenv("BUCKET_NAME", "")
+    SYNC_BUCKET_NAME: str = os.getenv("SYNC_BUCKET_NAME", "")
     AWS_REGION: str = os.getenv("AWS_REGION", "ap-northeast-1")
 
     # DynamoDB設定

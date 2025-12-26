@@ -41,6 +41,7 @@ export interface ApiProps {
 export class Api extends Construct {
   public readonly apiEndpoint: string;
   public readonly documentBucket: Bucket;
+  public readonly syncBucket: Bucket;
   public readonly handler: DockerImageFunction;
 
   constructor(scope: Construct, id: string, props: ApiProps) {
@@ -78,6 +79,15 @@ export class Api extends Construct {
       ],
     });
 
+    // S3バケット（同期用）
+    const syncBucket = new Bucket(this, "SyncBucket", {
+      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+      encryption: BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+    });
+
     // Lambda実行ロール
     const lambdaRole = new Role(this, "LambdaExecutionRole", {
       assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
@@ -92,7 +102,12 @@ export class Api extends Construct {
     lambdaRole.addToPolicy(
       new PolicyStatement({
         actions: ["s3:*"],
-        resources: [documentBucket.bucketArn, `${documentBucket.bucketArn}/*`],
+        resources: [
+          documentBucket.bucketArn, 
+          `${documentBucket.bucketArn}/*`,
+          syncBucket.bucketArn,
+          `${syncBucket.bucketArn}/*`
+        ],
       })
     );
 
@@ -150,6 +165,7 @@ export class Api extends Construct {
       memorySize: 4096,
       environment: {
         BUCKET_NAME: documentBucket.bucketName,
+        SYNC_BUCKET_NAME: syncBucket.bucketName,
         IMAGES_TABLE_NAME: imagesTable.tableName,
         JOBS_TABLE_NAME: jobsTable.tableName,
         SCHEMAS_TABLE_NAME: props.schemasTable.tableName,
@@ -282,5 +298,13 @@ export class Api extends Construct {
       value: documentBucket.bucketName,
       description: "S3 Document Bucket Name",
     });
+
+    new CfnOutput(this, "SyncBucketName", {
+      value: syncBucket.bucketName,
+      description: "S3 Sync Bucket Name",
+    });
+
+    // プロパティに割り当て
+    this.syncBucket = syncBucket;
   }
 }

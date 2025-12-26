@@ -1,14 +1,11 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
 import logging
-import boto3
-import json
-import uuid
 
 from schemas import (
     OcrResultResponse, OcrStartRequest, JobStartResponse, OcrResult
 )
 from services.ocr_service import OcrService
-from repositories import get_images, update_image_status, get_inference_component_status, trigger_endpoint_wakeup
+from repositories import get_inference_component_status
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -17,65 +14,22 @@ router = APIRouter(prefix="/ocr", tags=["OCR"])
 # OCRサービスのインスタンス
 ocr_service = OcrService()
 
-# Step Functions client
-sfn_client = boto3.client('stepfunctions')
-
 
 @router.post("/start", response_model=JobStartResponse)
 async def start_ocr(request: OcrStartRequest = OcrStartRequest()):
     """OCR処理を開始する（Step Functions版）"""
     try:
-        # エンドポイント状態確認
-        status = get_inference_component_status()
-        
-        if not status['ready']:
-            # ダミーリクエストでスケールアウトをトリガー
-            trigger_endpoint_wakeup()
-            
-            # エラーレスポンス
+        result = await ocr_service.start_step_functions_job(request)
+        return JobStartResponse(jobId=result["jobId"])
+    except ValueError as e:
+        if str(e) == 'endpoint_not_ready':
             raise HTTPException(
                 status_code=503,
-                detail={
-                    'error': 'endpoint_not_ready',
-                    'message': 'OCRエンドポイント起動中（約10分）\n\nこの画面を開いたままにすると起動後に自動でOCR処理を開始します。\n画面を閉じてもバックグラウンドで起動処理は継続されます。'
-                }
+                detail={"error": "endpoint_not_ready", "message": "Endpoint warming up"}
             )
-        
-        job_id = str(uuid.uuid4())
-        app_name = request.app_name or 'shiwakeru'
-        
-        # 1. pending画像を取得
-        images = get_images(app_name)
-        pending_images = [img for img in images if img.get('status') == 'pending']
-        
-        logger.info(f"Found {len(pending_images)} pending images for app: {app_name}")
-        
-        if not pending_images:
-            logger.warning(f"No pending images found for app: {app_name}")
-            return JobStartResponse(jobId=job_id)
-        
-        # 2. ステータスを更新
-        for img in pending_images:
-            update_image_status(img['id'], 'processing', job_id)
-        
-        # 3. Step Functions起動
-        execution_response = sfn_client.start_execution(
-            stateMachineArn=settings.STATE_MACHINE_ARN,
-            name=f"ocr-job-{job_id}",
-            input=json.dumps({
-                'job_id': job_id,
-                'images': [{'image_id': img['id']} for img in pending_images]
-            })
-        )
-        
-        logger.info(f"Started Step Functions execution: {execution_response['executionArn']}")
-        
-        return JobStartResponse(jobId=job_id)
-        
-    except HTTPException:
-        raise
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"OCR job start error: {str(e)}")
+        logger.error(f"Error starting OCR job: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
@@ -105,40 +59,15 @@ async def update_ocr_result(image_id: str, edited_ocr_data: dict):
 async def start_ocr_for_image(image_id: str):
     """指定した画像IDのOCR処理を開始する（Step Functions版）"""
     try:
-        # エンドポイント状態確認
-        status = get_inference_component_status()
-        
-        if not status['ready']:
-            # ダミーリクエストでスケールアウトをトリガー
-            trigger_endpoint_wakeup()
-            
-            # エラーレスポンス
+        result = await ocr_service.start_step_functions_for_image(image_id)
+        return result
+    except ValueError as e:
+        if str(e) == 'endpoint_not_ready':
             raise HTTPException(
                 status_code=503,
-                detail={
-                    'error': 'endpoint_not_ready',
-                    'message': 'OCRエンドポイント起動中（約10分）\n\nこの画面を開いたままにすると起動後に自動でOCR処理を開始します。\n画面を閉じてもバックグラウンドで起動処理は継続されます。'
-                }
+                detail={"error": "endpoint_not_ready", "message": "Endpoint warming up"}
             )
-        
-        job_id = str(uuid.uuid4())
-        
-        # ステータスをprocessingに更新
-        update_image_status(image_id, 'processing', job_id)
-        
-        # Step Functions起動（単一画像）
-        execution_response = sfn_client.start_execution(
-            stateMachineArn=settings.STATE_MACHINE_ARN,
-            name=f"ocr-single-{image_id}-{job_id[:8]}",
-            input=json.dumps({
-                'job_id': job_id,
-                'images': [{'image_id': image_id}]
-            })
-        )
-        
-        logger.info(f"Started Step Functions execution for image {image_id}: {execution_response['executionArn']}")
-        
-        return {" status": "processing", "image_id": image_id, "job_id": job_id}
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error starting OCR for image: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")

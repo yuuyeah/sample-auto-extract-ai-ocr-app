@@ -1,12 +1,14 @@
 import uuid
 import logging
+import json
+import boto3
 from typing import Optional, Dict, Any
 from abc import ABC, abstractmethod
 
 from repositories import (
     get_images, get_job,
     get_image, update_ocr_result as db_update_ocr_result,
-    update_image_status
+    update_image_status, get_inference_component_status, trigger_endpoint_wakeup
 )
 from schemas import OcrResult, OcrResultResponse
 from config import settings
@@ -62,57 +64,6 @@ class OcrService:
         self.enable_ocr = settings.ENABLE_OCR
         self.background_task = background_task
 
-    async def start_ocr_job(self, app_name: Optional[str] = None) -> str:
-        """OCR処理ジョブを開始する"""
-        job_id = str(uuid.uuid4())
-
-        try:
-            # ジョブを作成
-            create_job(job_id, 'processing')
-
-            # 保留中の画像を取得（app_name指定時はGSIでquery、未指定時はscanで全件取得）
-            if app_name:
-                # 特定アプリの画像のみをGSI経由で効率的に取得（DynamoDB scanの1MB制限を回避）
-                images_list = get_images(app_name)
-                logger.info(
-                    f"アプリ '{app_name}' の画像を取得しました: {len(images_list)}件")
-            else:
-                # 全アプリの画像を取得（小規模データ用、大量データがある場合は要注意）
-                images_list = get_images()
-                logger.warning(
-                    "全アプリの画像をscanで取得中（大量データがある場合は処理が不完全になる可能性があります）")
-
-            processing_images = []
-
-            # pendingステータスの画像のみを処理対象とする
-            for image in images_list:
-                if image.get("status") == "pending":
-                    update_image_status(image.get("id"), "processing", job_id)
-                    processing_images.append(image)
-
-            # バックグラウンドタスクとしてOCR処理を実行
-            if processing_images:
-                logger.info(
-                    f"バックグラウンドタスクを開始します: job_id={job_id}, images={len(processing_images)}")
-                if self.background_task:
-                    # バックグラウンドタスクとして実行
-                    task_id = self.background_task.add_task(
-                        self._process_job_pipeline, job_id)
-                    logger.info(
-                        f"Started OCR job {job_id} with task ID {task_id}")
-                else:
-                    # 同期実行（テスト用）
-                    await self._process_ocr_background(job_id, processing_images, app_name)
-            else:
-                logger.warning(f"処理対象の画像がありません: job_id={job_id}")
-
-            logger.info(f"Started OCR job: {job_id}")
-            return job_id
-
-        except Exception as e:
-            logger.error(f"OCRジョブの開始エラー: {str(e)}")
-            raise
-
     async def get_ocr_result(self, image_id: str) -> OcrResultResponse:
         """OCR結果を取得する"""
         image_data = get_image(image_id)
@@ -148,32 +99,6 @@ class OcrService:
     async def update_ocr_result(self, image_id: str, edited_ocr_data: dict) -> None:
         """OCR結果を更新する"""
         db_update_ocr_result(image_id, edited_ocr_data)
-
-    def _process_job_pipeline(self, job_id: str) -> None:
-        """バックグラウンドタスク用のジョブパイプライン処理"""
-        try:
-            logger.info(f"バックグラウンドタスク開始: job_id={job_id}")
-            # ジョブに関連する画像を取得
-            images = get_images_by_job_id(job_id)
-            logger.info(f"Processing job {job_id} with {len(images)} images")
-
-            # 同時処理数を制限（例: 最大2枚ずつ処理）
-            batch_size = 2
-            for i in range(0, len(images), batch_size):
-                batch = images[i:i+batch_size]
-                logger.info(
-                    f"Processing batch {i//batch_size + 1} with {len(batch)} images")
-
-                for image in batch:
-                    image_id = image.get("id")
-                    # 新実装（ImageProcessingPipelineを直接使用）
-                    from services.image_processing_pipeline import ImageProcessingPipeline
-                    pipeline = ImageProcessingPipeline()
-                    pipeline.process_complete_pipeline(image_id)
-
-        except Exception as e:
-            logger.error(f"Error in background OCR processing: {str(e)}")
-            raise
 
     def process_image_ocr(self, image_id: str) -> None:
         """画像のOCR処理のみを実行"""
@@ -231,3 +156,83 @@ class OcrService:
             return IndividualPageOcrProcessor(image_id)
         else:
             return SingleImageOcrProcessor(image_id)
+
+    async def start_step_functions_job(self, request) -> Dict[str, Any]:
+        """Step FunctionsでOCRジョブを開始する"""
+        try:
+            # エンドポイント状態確認
+            status = get_inference_component_status()
+            
+            if not status['ready']:
+                trigger_endpoint_wakeup()
+                raise ValueError('endpoint_not_ready')
+            
+            job_id = str(uuid.uuid4())
+            app_name = request.app_name
+            
+            # pending画像を取得
+            images = get_images(app_name)
+            pending_images = [img for img in images if img.get('status') == 'pending']
+            
+            logger.info(f"Found {len(pending_images)} pending images for app: {app_name}")
+            
+            if not pending_images:
+                logger.warning(f"No pending images found for app: {app_name}")
+                return {"jobId": job_id}
+            
+            # ステータスを更新
+            for img in pending_images:
+                update_image_status(img['id'], 'processing', job_id)
+            
+            # Step Functions起動
+            sfn_client = boto3.client('stepfunctions')
+            execution_response = sfn_client.start_execution(
+                stateMachineArn=settings.STATE_MACHINE_ARN,
+                name=f"ocr-job-{job_id}",
+                input=json.dumps({
+                    'job_id': job_id,
+                    'images': [{'image_id': img['id']} for img in pending_images]
+                })
+            )
+            
+            logger.info(f"Started Step Functions execution: {execution_response['executionArn']}")
+            
+            return {"jobId": job_id}
+            
+        except Exception as e:
+            logger.error(f"OCR job start error: {str(e)}")
+            raise
+
+    async def start_step_functions_for_image(self, image_id: str) -> Dict[str, Any]:
+        """指定画像のStep Functions OCR処理を開始する"""
+        try:
+            # エンドポイント状態確認
+            status = get_inference_component_status()
+            
+            if not status['ready']:
+                trigger_endpoint_wakeup()
+                raise ValueError('endpoint_not_ready')
+            
+            job_id = str(uuid.uuid4())
+            
+            # ステータスをprocessingに更新
+            update_image_status(image_id, 'processing', job_id)
+            
+            # Step Functions起動（単一画像）
+            sfn_client = boto3.client('stepfunctions')
+            execution_response = sfn_client.start_execution(
+                stateMachineArn=settings.STATE_MACHINE_ARN,
+                name=f"ocr-single-{image_id}-{job_id[:8]}",
+                input=json.dumps({
+                    'job_id': job_id,
+                    'images': [{'image_id': image_id}]
+                })
+            )
+            
+            logger.info(f"Started Step Functions execution for image {image_id}: {execution_response['executionArn']}")
+            
+            return {"status": "processing", "image_id": image_id, "job_id": job_id}
+            
+        except Exception as e:
+            logger.error(f"Error starting OCR for image: {str(e)}")
+            raise

@@ -14,9 +14,10 @@ const S3SyncModal: React.FC<S3SyncModalProps> = ({ isOpen, onClose, appName, onI
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [importStatus, setImportStatus] = useState<Record<string, string>>({});
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [pageProcessingMode, setPageProcessingMode] = useState<'combined' | 'individual'>('combined');
 
-  // S3ファイル一覧を取得
+  // S3ファイル一覧を取得（重複チェック付き）
   const fetchS3Files = async () => {
     if (!appName) return;
     
@@ -24,7 +25,7 @@ const S3SyncModal: React.FC<S3SyncModalProps> = ({ isOpen, onClose, appName, onI
     setError(null);
     
     try {
-      const response = await api.post(`/s3-sync/${appName}`);
+      const response = await api.get(`/s3-sync/${appName}/list`);
       setFiles(response.data.files || []);
     } catch (err: any) {
       console.error('S3ファイル一覧の取得に失敗しました:', err);
@@ -34,50 +35,102 @@ const S3SyncModal: React.FC<S3SyncModalProps> = ({ isOpen, onClose, appName, onI
     }
   };
 
-  // ファイルをインポート
-  const importFile = async (file: S3SyncFile) => {
-    if (!appName) return;
-    
-    setImporting(true);
-    setImportStatus(prev => ({ ...prev, [file.key]: 'importing' }));
-    
-    try {
-      const response = await api.post<S3ImportResponse>(`/s3-sync/${appName}/import`, file);
-      setImportStatus(prev => ({ ...prev, [file.key]: 'imported' }));
-      
-      // インポート完了後にコールバックを呼び出す
-      onImportComplete();
-      
-      return response.data;
-    } catch (err: any) {
-      console.error('ファイルのインポートに失敗しました:', err);
-      setImportStatus(prev => ({ ...prev, [file.key]: 'error' }));
-      throw err;
-    } finally {
-      setImporting(false);
-    }
+  // チェックボックス操作
+  const toggleFileSelection = (fileKey: string) => {
+    setSelectedFiles(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(fileKey)) {
+        newSet.delete(fileKey);
+      } else {
+        newSet.add(fileKey);
+      }
+      return newSet;
+    });
   };
 
-  // 全てのファイルをインポート
-  const importAllFiles = async () => {
-    if (files.length === 0) return;
+  // フォルダごとの選択切り替え
+  const togglePathSelection = (pathFiles: S3SyncFile[]) => {
+    const importablePathFiles = pathFiles.filter(file => !file.is_existing);
+    const pathFileKeys = importablePathFiles.map(file => file.key);
+    const allPathFilesSelected = pathFileKeys.every(key => selectedFiles.has(key));
+    
+    const newSelectedFiles = new Set(selectedFiles);
+    
+    if (allPathFilesSelected) {
+      pathFileKeys.forEach(key => newSelectedFiles.delete(key));
+    } else {
+      pathFileKeys.forEach(key => newSelectedFiles.add(key));
+    }
+    
+    setSelectedFiles(newSelectedFiles);
+  };
+
+  // フォルダの選択状態を取得
+  const getPathSelectionState = (pathFiles: S3SyncFile[]) => {
+    const importablePathFiles = pathFiles.filter(file => !file.is_existing);
+    if (importablePathFiles.length === 0) return { checked: false, indeterminate: false };
+    
+    const pathFileKeys = importablePathFiles.map(file => file.key);
+    const selectedCount = pathFileKeys.filter(key => selectedFiles.has(key)).length;
+    
+    if (selectedCount === 0) return { checked: false, indeterminate: false };
+    if (selectedCount === pathFileKeys.length) return { checked: true, indeterminate: false };
+    return { checked: false, indeterminate: true };
+  };
+
+  // 選択されたファイルをインポート
+  const importSelectedFiles = async () => {
+    const selectedFileObjects = files.filter(file => selectedFiles.has(file.key) && !file.is_existing);
+    if (selectedFileObjects.length === 0) return;
     
     setImporting(true);
     setError(null);
     
     try {
-      // 各ファイルを順番にインポート
-      for (const file of files) {
-        if (importStatus[file.key] !== 'imported') {
-          await importFile(file);
-        }
+      for (const file of selectedFileObjects) {
+        const importData = {
+          ...file,
+          page_processing_mode: pageProcessingMode
+        };
+        await api.post<S3ImportResponse>(`/s3-sync/${appName}/import`, importData);
       }
+      
+      await fetchS3Files();
+      setSelectedFiles(new Set());
+      onImportComplete();
+      
     } catch (err: any) {
       console.error('ファイルのインポートに失敗しました:', err);
       setError(err.response?.data?.detail || 'ファイルのインポートに失敗しました');
     } finally {
       setImporting(false);
     }
+  };
+
+  // S3キーからディレクトリパスを抽出
+  const extractDirectoryPath = (s3Key: string): string => {
+    const parts = s3Key.split('/');
+    if (parts.length <= 1) return 'ルート';
+    return parts.slice(0, -1).join('/') + '/';
+  };
+
+  // パス別グループ化
+  const groupFilesByPath = (files: S3SyncFile[]): Record<string, S3SyncFile[]> => {
+    const grouped: Record<string, S3SyncFile[]> = {};
+    
+    files.forEach(file => {
+      const path = extractDirectoryPath(file.key);
+      if (!grouped[path]) {
+        grouped[path] = [];
+      }
+      grouped[path].push(file);
+    });
+
+    Object.keys(grouped).forEach(path => {
+      grouped[path].sort((a, b) => a.filename.localeCompare(b.filename));
+    });
+
+    return grouped;
   };
 
   // モーダルが開かれたときにS3ファイル一覧を取得
@@ -111,6 +164,35 @@ const S3SyncModal: React.FC<S3SyncModalProps> = ({ isOpen, onClose, appName, onI
             </div>
           )}
 
+          {/* 処理モード選択 */}
+          <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              処理モード
+            </label>
+            <div className="flex space-x-4">
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  value="combined"
+                  checked={pageProcessingMode === 'combined'}
+                  onChange={(e) => setPageProcessingMode(e.target.value as 'combined' | 'individual')}
+                  className="mr-2"
+                />
+                <span className="text-sm">結合モード（全ページを1つのファイルとして処理）</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  value="individual"
+                  checked={pageProcessingMode === 'individual'}
+                  onChange={(e) => setPageProcessingMode(e.target.value as 'combined' | 'individual')}
+                  className="mr-2"
+                />
+                <span className="text-sm">個別モード（各ページを個別ファイルとして処理）</span>
+              </label>
+            </div>
+          </div>
+
           <div className="flex justify-between mb-4">
             <button
               onClick={fetchS3Files}
@@ -136,8 +218,8 @@ const S3SyncModal: React.FC<S3SyncModalProps> = ({ isOpen, onClose, appName, onI
             </button>
 
             <button
-              onClick={importAllFiles}
-              disabled={importing || files.length === 0}
+              onClick={importSelectedFiles}
+              disabled={importing || selectedFiles.size === 0}
               className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:opacity-50"
             >
               {importing ? (
@@ -153,7 +235,7 @@ const S3SyncModal: React.FC<S3SyncModalProps> = ({ isOpen, onClose, appName, onI
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
-                  全てインポート
+                  選択ファイルをインポート ({selectedFiles.size})
                 </span>
               )}
             </button>
@@ -172,70 +254,59 @@ const S3SyncModal: React.FC<S3SyncModalProps> = ({ isOpen, onClose, appName, onI
                 S3バケットにファイルが見つかりませんでした
               </div>
             ) : (
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      ファイル名
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      サイズ
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      更新日時
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      ステータス
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      アクション
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {files.map((file) => (
-                    <tr key={file.key}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {file.filename}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {(file.size / 1024 / 1024).toFixed(2)} MB
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(file.last_modified).toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {importStatus[file.key] === 'importing' ? (
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                            インポート中
-                          </span>
-                        ) : importStatus[file.key] === 'imported' ? (
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                            インポート済み
-                          </span>
-                        ) : importStatus[file.key] === 'error' ? (
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                            エラー
-                          </span>
-                        ) : (
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                            未インポート
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button
-                          onClick={() => importFile(file)}
-                          disabled={importing || importStatus[file.key] === 'importing' || importStatus[file.key] === 'imported'}
-                          className="text-indigo-600 hover:text-indigo-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          インポート
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="space-y-4">
+                {Object.entries(groupFilesByPath(files)).map(([path, pathFiles]) => {
+                  const selectionState = getPathSelectionState(pathFiles);
+                  return (
+                    <div key={path} className="border rounded-lg">
+                      <div className="bg-gray-50 px-4 py-2 border-b flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={selectionState.checked}
+                          ref={(el) => {
+                            if (el) el.indeterminate = selectionState.indeterminate;
+                          }}
+                          onChange={() => togglePathSelection(pathFiles)}
+                          className="mr-2"
+                        />
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
+                        </svg>
+                        <span className="font-medium text-gray-700">{path}</span>
+                        <span className="ml-2 text-sm text-gray-500">({pathFiles.length} ファイル)</span>
+                      </div>
+                      <div className="divide-y divide-gray-200">
+                        {pathFiles.map((file) => (
+                          <div key={file.key} className="px-4 py-3 flex items-center justify-between">
+                            <div className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={selectedFiles.has(file.key)}
+                                onChange={() => toggleFileSelection(file.key)}
+                                disabled={file.is_existing}
+                                className="mr-3"
+                              />
+                              <div>
+                                <div className="flex items-center">
+                                  <span className="text-sm font-medium text-gray-900">{file.filename}</span>
+                                  {file.is_existing && (
+                                    <span className="ml-2 px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded">
+                                      インポート済み
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {(file.size / 1024).toFixed(1)} KB • {new Date(file.last_modified).toLocaleString()}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
