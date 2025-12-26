@@ -1,4 +1,4 @@
-from utils.prompts import (
+from domains.prompts import (
     create_single_with_ocr_prompt, create_single_without_ocr_prompt,
     create_multi_with_ocr_prompt, create_multi_without_ocr_prompt
 )
@@ -6,113 +6,47 @@ from utils.helpers import safe_get_from_dynamo_data, float_to_decimal
 from config import settings
 from utils.bedrock import call_bedrock, call_bedrock_with_retry, parse_converse_response, extract_json_from_response, parse_extraction_response
 from clients import s3_client
-from utils.template import generate_unified_template
+from domains.template import generate_unified_template
 import logging
 import base64
 import uuid
 
-from app_schema import get_app_schema, get_extraction_fields_for_app, get_field_names_for_app, get_custom_prompt_for_app, DEFAULT_APP
-from database import get_image, update_extracted_info, update_image_status
+from repositories import get_app_schema, get_extraction_fields_for_app, get_field_names_for_app, get_custom_prompt_for_app
+from repositories import get_image, update_extracted_info, update_image_status
 
 logger = logging.getLogger(__name__)
 
 
-def extract_information_from_single_image_with_ocr(image_id: str):
+def extract_information_from_single_image_with_ocr(
+    image_data: bytes,
+    content_type: str,
+    ocr_result: dict,
+    app_extraction_fields: dict,
+    field_names: list,
+    custom_prompt: str = ""
+) -> dict:
     """
-    単一画像+OCR結果での情報抽出（統一版：関数内でOCR結果取得）
+    単一画像+OCR結果での情報抽出（純粋関数版）
+    
+    Args:
+        image_data: 画像のバイナリデータ
+        content_type: 画像のコンテンツタイプ (e.g., 'image/jpeg')
+        ocr_result: OCR結果の辞書
+        app_extraction_fields: 抽出フィールド定義
+        field_names: フィールド名のリスト
+        custom_prompt: カスタムプロンプト
+        
+    Returns:
+        dict: {"extracted_info": {...}, "mapping": {...}}
     """
     try:
-        logger.info(f"単一画像情報抽出を開始: {image_id}")
+        logger.info("単一画像情報抽出を開始")
 
-        # 画像情報を取得
-        image_data = get_image(str(image_id) if isinstance(
-            image_id, uuid.UUID) else image_id)
-
-        if not image_data:
-            logger.error(f"画像 {image_id} が見つかりません")
-            return
-
-        # OCR結果を関数内で取得（統一）
-        ocr_result = image_data.get("ocr_result", {})
-        ocr_text = ocr_result.get("text", "")
-        if not ocr_text:
-            # フォールバック: wordsから結合
-            ocr_text = "\n".join(
-                [word.get("content", "") for word in ocr_result.get("words", [])])
-
-        # converted_s3_keyを使用（リスト形式に対応）
-        converted_s3_keys = image_data.get("converted_s3_key", [])
-        if not converted_s3_keys:
-            # フォールバックとしてs3_keyを確認
-            s3_keys = image_data.get("s3_key", [])
-            if isinstance(s3_keys, list) and s3_keys:
-                converted_s3_keys = s3_keys
-            elif isinstance(s3_keys, str):
-                converted_s3_keys = [s3_keys]
-            else:
-                logger.error(f"S3キーが見つかりません: {image_id}")
-                update_image_status(
-                    str(image_id) if isinstance(
-                        image_id, uuid.UUID) else image_id,
-                    "failed"
-                )
-                return
-
-        # リストから最初のキーを取得
-        if isinstance(converted_s3_keys, list):
-            s3_key = converted_s3_keys[0] if converted_s3_keys else None
-        else:
-            s3_key = converted_s3_keys
-
-        if not s3_key:
-            logger.error(f"有効なS3キーが見つかりません: {image_id}")
-            update_image_status(
-                str(image_id) if isinstance(image_id, uuid.UUID) else image_id,
-                "failed"
-            )
-            return
-
-        # アプリ名を取得（なければデフォルト）
-        app_name = image_data.get("app_name", DEFAULT_APP)
-
-        logger.info(f"使用するS3キー: {s3_key}")
-
-        # アプリケーションスキーマを取得
-        app_schema = get_app_schema(app_name)
-        if not app_schema:
-            logger.error(f"App schema not found: {app_name}")
-            return
-
-        # このアプリ用の抽出フィールド定義を取得
-        app_extraction_fields = get_extraction_fields_for_app(app_name)
-        field_names = get_field_names_for_app(app_name)
-
-        # カスタムプロンプトを取得
-        custom_prompt = get_custom_prompt_for_app(app_name)
+        # 画像をBase64エンコード
+        image_base64 = base64.b64encode(image_data).decode('utf-8')
 
         logger.info(
-            f"処理アプリ: {app_name}, フィールド数: {len(app_extraction_fields.get('fields', []))}")
-
-        # 画像データを取得
-        try:
-            s3_response = s3_client.get_object(
-                Bucket=settings.BUCKET_NAME,
-                Key=s3_key
-            )
-            image_data = s3_response['Body'].read()
-            image_base64 = base64.b64encode(image_data).decode('utf-8')
-
-            # コンテンツタイプからフォーマットを取得
-            content_type = s3_response.get('ContentType', 'image/jpeg')
-            logger.info(
-                f"画像 {image_id} を取得しました: {content_type}, サイズ: {len(image_data)} バイト")
-        except Exception as e:
-            logger.error(f"画像データ取得エラー: {str(e)}")
-            update_image_status(
-                str(image_id) if isinstance(image_id, uuid.UUID) else image_id,
-                "failed"
-            )
-            return
+            f"画像を取得しました: {content_type}, サイズ: {len(image_data)} バイト")
 
         # 抽出対象の項目リストを生成
         extraction_fields = []
@@ -265,91 +199,54 @@ def extract_information_from_single_image_with_ocr(image_id: str):
         extracted_info, mapping = parse_extraction_response(
             ai_response, field_names)
 
-        # float値をDecimal型に変換してからデータベースに保存
+        # float値をDecimal型に変換
         extracted_info = float_to_decimal(extracted_info)
         mapping = float_to_decimal(mapping)
 
-        # 抽出結果とマッピング情報をデータベースに保存
-        update_extracted_info(
-            str(image_id) if isinstance(image_id, uuid.UUID) else image_id,
-            extracted_info,
-            mapping,
-            'completed'
-        )
-
-        # 画像のステータスも完了に更新
-        update_image_status(
-            str(image_id) if isinstance(image_id, uuid.UUID) else image_id,
-            "completed"
-        )
-
-        logger.info(f"単一画像情報抽出完了: {image_id}")
+        logger.info("単一画像情報抽出完了")
+        
+        return {
+            "extracted_info": extracted_info,
+            "mapping": mapping
+        }
 
     except Exception as e:
         logger.error(f"単一画像情報抽出エラー: {str(e)}")
-        try:
-            # エラー時はステータスを失敗に更新
-            update_extracted_info(
-                str(image_id) if isinstance(image_id, uuid.UUID) else image_id,
-                {},
-                {},
-                'failed'
-            )
-
-            # 画像のステータスも失敗に更新
-            update_image_status(
-                str(image_id) if isinstance(image_id, uuid.UUID) else image_id,
-                "failed"
-            )
-        except Exception as db_error:
-            logger.error(f"Error updating extraction status: {str(db_error)}")
         raise
 
 
-def extract_information_from_multi_images_with_ocr(image_id: str):
+def extract_information_from_multi_images_with_ocr(
+    page_images: list,
+    content_type: str,
+    ocr_results: list,
+    app_extraction_fields: dict,
+    field_names: list,
+    custom_prompt: str = ""
+) -> dict:
     """
-    複数画像+OCR結果での情報抽出
+    複数画像+OCR結果での情報抽出（純粋関数版）
+    
+    Args:
+        page_images: 画像のバイナリデータのリスト
+        content_type: 画像のコンテンツタイプ (e.g., 'image/jpeg')
+        ocr_results: OCR結果のリスト
+        app_extraction_fields: 抽出フィールド定義
+        field_names: フィールド名のリスト
+        custom_prompt: カスタムプロンプト
+        
+    Returns:
+        dict: {"extracted_info": {...}, "mapping": {...}}
     """
     try:
-        logger.info(f"複数画像情報抽出を開始: {image_id}")
+        logger.info("複数画像情報抽出を開始")
 
-        # 画像データを取得
-        image_data = get_image(image_id)
-        app_name = image_data.get("app_name", DEFAULT_APP)
-
-        # アプリケーションスキーマを取得
-        app_schema = get_app_schema(app_name)
-        if not app_schema:
-            logger.error(f"App schema not found: {app_name}")
-            return
-
-        # このアプリ用の抽出フィールド定義を取得
-        app_extraction_fields = get_extraction_fields_for_app(app_name)
-        field_names = get_field_names_for_app(app_name)
-
-        # カスタムプロンプトを取得
-        custom_prompt = get_custom_prompt_for_app(app_name)
-
-        logger.info(f"複数画像情報抽出を開始: {image_id}")
-        logger.info(
-            f"処理アプリ: {app_name}, フィールド数: {len(app_extraction_fields.get('fields', []))}")
-
-        # 画像データとOCR結果を取得
-        converted_s3_keys = safe_get_from_dynamo_data(
-            image_data, "converted_s3_key", [])
-
-        if not converted_s3_keys:
-            raise ValueError("変換済み画像が見つかりません")
-
-        # リスト形式でない場合は単一画像として扱う
-        if not isinstance(converted_s3_keys, list):
-            converted_s3_keys = [converted_s3_keys]
-
-        # OCR結果を取得
-        ocr_results = get_multipage_ocr_results(image_id)
+        if not page_images:
+            raise ValueError("画像データを取得できませんでした")
 
         if not ocr_results:
             raise ValueError("OCR結果が見つかりません")
+
+        logger.info(f"画像数: {len(page_images)}, OCRページ数: {len(ocr_results)}")
 
         # 抽出指示を作成
         instructions = f"以下のスキーマに従って、文書から情報を抽出してください。"
@@ -357,21 +254,6 @@ def extract_information_from_multi_images_with_ocr(image_id: str):
         # プロンプト生成（カスタムプロンプトを渡す）
         prompt = create_multi_with_ocr_prompt(
             ocr_results, app_extraction_fields, instructions, custom_prompt)
-
-        # 複数画像を取得
-        page_images = []
-        for s3_key in converted_s3_keys:
-            try:
-                image_bytes = get_s3_object_bytes(s3_key)
-                page_images.append(image_bytes)
-            except Exception as s3_error:
-                logger.error(f"S3画像取得エラー {s3_key}: {str(s3_error)}")
-                continue
-
-        if not page_images:
-            raise ValueError("画像データを取得できませんでした")
-
-        logger.info(f"画像数: {len(page_images)}, OCRページ数: {len(ocr_results)}")
 
         # システムプロンプトを設定
         system_prompts = [{
@@ -381,11 +263,14 @@ def extract_information_from_multi_images_with_ocr(image_id: str):
         # メッセージコンテンツを構築
         content = [{"text": prompt}]
 
+        # 画像フォーマットを決定
+        image_format = content_type.split('/')[1] if content_type and '/' in content_type else 'jpeg'
+
         # 各ページの画像を追加
         for i, image_bytes in enumerate(page_images):
             content.append({
                 "image": {
-                    "format": "jpeg",
+                    "format": image_format,
                     "source": {"bytes": image_bytes}
                 }
             })
@@ -403,86 +288,47 @@ def extract_information_from_multi_images_with_ocr(image_id: str):
         extracted_info, mapping = parse_extraction_response(
             response_text, field_names)
 
-        # float値をDecimal型に変換してからデータベースに保存
+        # float値をDecimal型に変換
         extracted_info = float_to_decimal(extracted_info)
         mapping = float_to_decimal(mapping)
 
-        # 結果を保存（マッピング情報も含める）
-        update_extracted_info(image_id, extracted_info, mapping, "completed")
-        update_image_status(image_id, "completed")
-
-        logger.info(f"複数画像情報抽出完了: {image_id}")
+        logger.info("複数画像情報抽出完了")
+        
+        return {
+            "extracted_info": extracted_info,
+            "mapping": mapping
+        }
 
     except Exception as e:
         logger.error(f"複数画像情報抽出エラー: {str(e)}")
-        update_image_status(image_id, "failed")
         raise
 
 
-def extract_information_from_multi_images_without_ocr(image_id: str):
+def extract_information_from_multi_images_without_ocr(
+    images_data: list,
+    app_extraction_fields: dict,
+    field_names: list,
+    custom_prompt: str = ""
+) -> dict:
     """
-    OCRなしでの複数画像情報抽出
+    OCRなしでの複数画像情報抽出（純粋関数版）
+    
+    Args:
+        images_data: 画像データのリスト [{'bytes': bytes, 'content_type': str}, ...]
+        app_extraction_fields: 抽出フィールド定義
+        field_names: フィールド名のリスト
+        custom_prompt: カスタムプロンプト
+        
+    Returns:
+        dict: {"extracted_info": {...}}
     """
     try:
-        logger.info(f"OCRなし複数画像情報抽出を開始: {image_id}")
+        logger.info("OCRなし複数画像情報抽出を開始")
 
-        # 画像情報を取得
-        image_data = get_image(str(image_id) if isinstance(
-            image_id, uuid.UUID) else image_id)
+        if not images_data:
+            raise ValueError("画像データが見つかりません")
 
-        if not image_data:
-            logger.error(f"画像 {image_id} が見つかりません")
-            return
-
-        # アプリ名を取得（なければデフォルト）
-        app_name = image_data.get("app_name", DEFAULT_APP)
-        converted_s3_keys = image_data.get("converted_s3_key", [])
-
-        # 複数画像の検証
-        if not isinstance(converted_s3_keys, list) or len(converted_s3_keys) <= 1:
-            logger.error(f"複数画像が見つかりません: {converted_s3_keys}")
-            update_image_status(image_id, "failed")
-            return
-
-        # このアプリ用の抽出フィールド定義を取得
-        app_extraction_fields = get_extraction_fields_for_app(app_name)
-        field_names = get_field_names_for_app(app_name)
-
-        # カスタムプロンプトを取得
-        custom_prompt = get_custom_prompt_for_app(app_name)
-
-        logger.info(f"OCRなし複数画像モードで情報抽出を開始: {image_id}")
-        logger.info(
-            f"処理アプリ: {app_name}, フィールド数: {len(app_extraction_fields.get('fields', []))}, 画像数: {len(converted_s3_keys)}")
-
-        # 複数画像をS3から取得
-        images_data = []
-        for i, s3_key in enumerate(converted_s3_keys):
-            try:
-                s3_response = s3_client.get_object(
-                    Bucket=settings.BUCKET_NAME,
-                    Key=s3_key
-                )
-                image_bytes = s3_response['Body'].read()
-                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-
-                # コンテンツタイプを取得
-                content_type = s3_response.get('ContentType', 'image/jpeg')
-
-                images_data.append({
-                    'base64': image_base64,
-                    'bytes': image_bytes,
-                    'content_type': content_type,
-                    'page': i + 1
-                })
-
-                logger.info(
-                    f"画像 {i+1}/{len(converted_s3_keys)} を取得: {content_type}, サイズ: {len(image_bytes)} バイト")
-
-            except Exception as e:
-                logger.error(f"画像データ取得エラー (ページ {i+1}): {str(e)}")
-                update_image_status(image_id, "failed")
-                return
+        logger.info(f"画像数: {len(images_data)}")
 
         # OCRなし複数画像用のプロンプトを作成
         vision_multiimage_prompt = create_multi_without_ocr_prompt(
@@ -545,60 +391,38 @@ def extract_information_from_multi_images_without_ocr(image_id: str):
             logger.error(f"複数画像OCRなしモードでのLLM呼び出しエラー: {str(e)}")
             extracted_info = {"error": str(e)}
 
-        # float値をDecimal型に変換してからデータベースに保存
+        # float値をDecimal型に変換
         extracted_info = float_to_decimal(extracted_info)
 
-        # 結果をDBに保存（OCRなしモードではマッピング情報は空）
-        update_extracted_info(image_id, extracted_info, {})
-        update_image_status(image_id, "completed")
-
-        logger.info(f"OCRなし複数画像情報抽出完了: {image_id}")
+        logger.info("OCRなし複数画像情報抽出完了")
+        
+        return {"extracted_info": extracted_info}
 
     except Exception as e:
         logger.error(f"OCRなし複数画像情報抽出エラー: {str(e)}")
-        update_image_status(image_id, "failed")
         raise
 
 
-def extract_information_from_single_image_without_ocr(image_id: str):
+def extract_information_from_single_image_without_ocr(
+    image_bytes: bytes,
+    app_extraction_fields: dict,
+    field_names: list,
+    custom_prompt: str = ""
+) -> dict:
     """
-    OCRなしでの情報抽出（画像のみ → LLM）
+    OCRなしでの情報抽出（画像のみ → LLM）（純粋関数版）
+    
+    Args:
+        image_bytes: 画像のバイナリデータ
+        app_extraction_fields: 抽出フィールド定義
+        field_names: フィールド名のリスト
+        custom_prompt: カスタムプロンプト
+        
+    Returns:
+        dict: {"extracted_info": {...}}
     """
     try:
-        logger.info(f"OCRなし情報抽出を開始: {image_id}")
-
-        # 画像情報を取得
-        image_data = get_image(str(image_id) if isinstance(
-            image_id, uuid.UUID) else image_id)
-
-        if not image_data:
-            logger.error(f"画像 {image_id} が見つかりません")
-            return
-
-        s3_key = image_data.get("s3_key")
-        # アプリ名を取得（なければデフォルト）
-        app_name = image_data.get("app_name", DEFAULT_APP)
-
-        # このアプリ用の抽出フィールド定義を取得
-        app_extraction_fields = get_extraction_fields_for_app(app_name)
-        field_names = get_field_names_for_app(app_name)
-
-        # カスタムプロンプトを取得
-        custom_prompt = get_custom_prompt_for_app(app_name)
-
-        logger.info(f"OCRなしモードで情報抽出を開始: {image_id}")
-        logger.info(
-            f"処理アプリ: {app_name}, フィールド数: {len(app_extraction_fields.get('fields', []))}")
-
-        # S3から画像を取得
-        s3_response = s3_client.get_object(
-            Bucket=settings.BUCKET_NAME,
-            Key=s3_key
-        )
-        image_bytes = s3_response['Body'].read()
-
-        # 画像をBase64エンコード
-        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+        logger.info("OCRなし情報抽出を開始")
 
         # OCRなしモード用のプロンプトを作成（fieldsを渡す）
         vision_only_prompt = create_single_without_ocr_prompt(
@@ -607,13 +431,10 @@ def extract_information_from_single_image_without_ocr(image_id: str):
 
         # LLMに画像のみを渡して情報抽出
         try:
-            # 画像データをデコードしてフォーマットを判定
-            image_data = base64.b64decode(image_base64)
-
             # 画像フォーマットを判定（簡易版）
-            if image_data.startswith(b'\xff\xd8'):
+            if image_bytes.startswith(b'\xff\xd8'):
                 image_format = "jpeg"
-            elif image_data.startswith(b'\x89PNG'):
+            elif image_bytes.startswith(b'\x89PNG'):
                 image_format = "png"
             else:
                 image_format = "jpeg"  # デフォルト
@@ -626,7 +447,7 @@ def extract_information_from_single_image_without_ocr(image_id: str):
                         "image": {
                             "format": image_format,
                             "source": {
-                                "bytes": image_data
+                                "bytes": image_bytes
                             }
                         }
                     },
@@ -660,18 +481,15 @@ def extract_information_from_single_image_without_ocr(image_id: str):
             logger.error(f"OCRなしモードでのLLM呼び出しエラー: {str(e)}")
             extracted_info = {"error": str(e)}
 
-        # float値をDecimal型に変換してからデータベースに保存
+        # float値をDecimal型に変換
         extracted_info = float_to_decimal(extracted_info)
 
-        # 結果をDBに保存（OCRなしモードではマッピング情報は空）
-        update_extracted_info(image_id, extracted_info, {})
-        update_image_status(image_id, "completed")
-
-        logger.info(f"OCRなし情報抽出完了: {image_id}")
+        logger.info("OCRなし情報抽出完了")
+        
+        return {"extracted_info": extracted_info}
 
     except Exception as e:
         logger.error(f"OCRなし情報抽出エラー: {str(e)}")
-        update_image_status(image_id, "failed")
         raise
 
 

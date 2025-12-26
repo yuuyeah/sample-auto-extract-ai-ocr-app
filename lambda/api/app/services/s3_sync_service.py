@@ -6,8 +6,10 @@ from typing import Dict, Any, Optional, List
 from botocore.exceptions import ClientError
 
 from config import settings
-from app_schema import get_app_input_methods
-from database import create_image_record
+from repositories.schema_repository import get_app_schema
+from repositories.image_repository import create_image_record, get_images_by_sync_source
+from schemas import UploadCompleteRequest
+from services.upload_service import UploadService
 
 logger = logging.getLogger(__name__)
 
@@ -17,50 +19,37 @@ class S3SyncService:
 
     def __init__(self):
         self.bucket_name = settings.BUCKET_NAME
+        self.sync_bucket_name = settings.SYNC_BUCKET_NAME
 
     async def sync_s3_files(self, app_name: str, prefix: Optional[str] = None) -> Dict[str, Any]:
         """S3バケットからファイルを同期する"""
         try:
             # アプリケーションの入力方法設定を取得
-            input_methods = get_app_input_methods(app_name)
+            app_schema = get_app_schema(app_name)
+            if not app_schema:
+                raise ValueError(f"アプリが見つかりません: {app_name}")
+
+            input_methods = app_schema.get("input_methods", {})
 
             # S3同期が有効かチェック
             if not input_methods.get("s3_sync", False):
                 raise ValueError(f"S3同期はこのアプリケーションでは有効になっていません: {app_name}")
 
-            # S3 URIを取得
-            s3_uri = input_methods.get("s3_uri", "")
-
-            if not s3_uri:
-                raise ValueError(f"S3 URIが設定されていません: {app_name}")
-
-            # S3 URIを解析（s3://bucket-name/path/to/folder/）
-            if not s3_uri.startswith("s3://"):
-                raise ValueError(f"無効なS3 URI形式です: {s3_uri}")
-
-            # s3://を削除
-            s3_uri_without_prefix = s3_uri[5:]
-
-            # バケット名とパスに分割
-            parts = s3_uri_without_prefix.split('/', 1)
-            bucket_name = parts[0]
-            # パスが指定されていない場合は空文字列をデフォルトとする
-            s3_path = parts[1] if len(parts) > 1 else ""
-
-            # 指定されたプレフィックスがある場合は使用
+            # 同期バケットからファイル一覧を取得
+            s3_path = f"{app_name}/"
             if prefix:
-                s3_path = prefix
+                s3_path = f"{app_name}/{prefix}"
 
-            # S3からファイル一覧を取得
-            files = await self._list_s3_files(bucket_name, s3_path)
+            files = await self._list_s3_files(self.sync_bucket_name, s3_path)
 
-            logger.info(
-                f"Found {len(files)} files in S3 bucket {bucket_name}/{s3_path}")
+            # フォルダ構造を構築
+            structure = self._build_folder_tree(files, app_name)
 
             return {
                 "status": "success",
-                "bucket_name": bucket_name,
+                "bucket_name": self.sync_bucket_name,
                 "s3_path": s3_path,
+                "structure": structure,
                 "files": files,
                 "total_files": len(files)
             }
@@ -73,25 +62,29 @@ class S3SyncService:
         """S3バケットからファイルをインポートしてOCR処理を開始する"""
         try:
             # アプリケーションの入力方法設定を取得
-            input_methods = get_app_input_methods(app_name)
+            app_schema = get_app_schema(app_name)
+            if not app_schema:
+                raise ValueError(f"アプリが見つかりません: {app_name}")
+
+            input_methods = app_schema.get("input_methods", {})
 
             # S3同期が有効かチェック
             if not input_methods.get("s3_sync", False):
                 raise ValueError(f"S3同期はこのアプリケーションでは有効になっていません: {app_name}")
 
-            # S3 URIを取得
-            s3_uri = input_methods.get("s3_uri", "")
-
-            if not s3_uri:
-                raise ValueError(f"S3 URIが設定されていません: {app_name}")
-
             # ファイル情報を取得
             source_bucket = file_data.get("bucket")
             source_key = file_data.get("key")
             filename = file_data.get("filename")
+            page_processing_mode = file_data.get("page_processing_mode", "combined")
 
             if not all([source_bucket, source_key, filename]):
                 raise ValueError("bucket, key, filename are required")
+
+            # 重複チェック
+            existing_files = get_images_by_sync_source(filename, source_key, app_name)
+            if existing_files:
+                raise ValueError(f"ファイル '{filename}' は既にインポート済みです")
 
             # 新しい画像IDを生成
             image_id = str(uuid.uuid4())
@@ -108,10 +101,25 @@ class S3SyncService:
                 filename=filename,
                 s3_key=destination_key,
                 app_name=app_name,
-                status="uploaded"
+                status="uploading",
+                page_processing_mode=page_processing_mode,
+                sync_source_path=source_key
             )
 
-            logger.info(f"Imported S3 file {source_key} as image {image_id}")
+            # アップロード完了処理を実行（OCR処理開始）
+            upload_service = UploadService()
+            upload_request = UploadCompleteRequest(
+                image_id=image_id,
+                filename=filename,
+                s3_key=destination_key,
+                app_name=app_name,
+                page_processing_mode=page_processing_mode
+            )
+            
+            # 直接アップロードと同じOCR処理フローを実行
+            processing_result = await upload_service.handle_upload_complete(upload_request)
+
+            logger.info(f"Imported S3 file {source_key} as image {image_id} and started processing")
 
             return {
                 "status": "success",
@@ -122,6 +130,86 @@ class S3SyncService:
         except Exception as e:
             logger.error(f"Error importing S3 file: {str(e)}")
             raise
+
+    async def get_files_with_duplicate_check(self, app_name: str, prefix: Optional[str] = None) -> Dict[str, Any]:
+        """S3ファイル一覧を重複チェック付きで取得する"""
+        try:
+            # 基本のファイル一覧を取得
+            sync_result = await self.sync_s3_files(app_name, prefix)
+            files = sync_result.get("files", [])
+            
+            if not files:
+                return sync_result
+            
+            # S3キーのリストを作成
+            s3_keys = [file["key"] for file in files]
+            
+            # 重複チェックを実行
+            existing_files = await self.check_existing_files(app_name, s3_keys)
+            
+            # ファイル情報に重複フラグを追加
+            for file in files:
+                file["is_existing"] = existing_files.get(file["key"], False)
+            
+            # 結果に重複情報を追加
+            sync_result["files"] = files
+            sync_result["duplicate_count"] = len([k for k, v in existing_files.items() if v])
+            
+            return sync_result
+            
+        except Exception as e:
+            logger.error(f"重複チェック付きファイル一覧取得エラー: {str(e)}")
+            raise
+
+    async def check_existing_files(self, app_name: str, s3_keys: List[str]) -> Dict[str, bool]:
+        """既存ファイルをチェックする"""
+        try:
+            existing_files = {}
+            
+            for s3_key in s3_keys:
+                filename = s3_key.split('/')[-1]
+                existing = get_images_by_sync_source(filename, s3_key, app_name)
+                existing_files[s3_key] = len(existing) > 0
+            
+            return existing_files
+            
+        except Exception as e:
+            logger.error(f"既存ファイルチェックエラー: {str(e)}")
+            raise
+
+    def _build_folder_tree(self, files: List[Dict[str, Any]], app_name: str) -> Dict[str, Any]:
+        """ファイル一覧からフォルダツリー構造を構築する"""
+        tree = {}
+        
+        for file in files:
+            # app_name/を除いた相対パスを取得
+            full_key = file['key']
+            if full_key.startswith(f"{app_name}/"):
+                relative_path = full_key[len(f"{app_name}/"):]
+            else:
+                relative_path = full_key
+            
+            # パスを分割してツリー構造を構築
+            path_parts = relative_path.split('/')
+            current = tree
+            
+            # フォルダ部分を処理
+            for part in path_parts[:-1]:
+                if part not in current:
+                    current[part] = {"type": "folder", "children": {}}
+                current = current[part]["children"]
+            
+            # ファイル部分を処理
+            file_name = path_parts[-1]
+            current[file_name] = {
+                "type": "file", 
+                "data": {
+                    **file,
+                    "relative_path": relative_path
+                }
+            }
+        
+        return tree
 
     async def _list_s3_files(self, bucket_name: str, prefix: str) -> List[Dict[str, Any]]:
         """S3バケットからファイル一覧を取得する"""
@@ -137,7 +225,6 @@ class S3SyncService:
             for page in page_iterator:
                 if 'Contents' in page:
                     for obj in page['Contents']:
-                        # ファイルのみを対象とする（フォルダは除外）
                         if not obj['Key'].endswith('/'):
                             files.append({
                                 "key": obj['Key'],
@@ -167,8 +254,7 @@ class S3SyncService:
                 Key=destination_key
             )
 
-            logger.info(
-                f"Copied S3 file from {source_bucket}/{source_key} to {self.bucket_name}/{destination_key}")
+            logger.info(f"Copied S3 file from {source_bucket}/{source_key} to {self.bucket_name}/{destination_key}")
 
         except ClientError as e:
             logger.error(f"Error copying S3 file: {str(e)}")

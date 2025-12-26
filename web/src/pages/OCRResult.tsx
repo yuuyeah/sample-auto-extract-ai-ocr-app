@@ -1,15 +1,18 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "react-router-dom";
-import api from "../utils/api";
+import { useParams, useNavigate } from "react-router-dom";
+import api, { runAgent as apiRunAgent, getAgentTools, updateVerificationStatus } from "../utils/api";
 import { OcrWord, OcrBoundingBox, OcrResponse, PresignedDownloadUrlResponse } from "../types/ocr";
 import { ExtractionResponse, ExtractionMapping } from "../types/extraction";
 import { Field } from "../types/app-schema";
+import { Suggestion, Tool } from "../types/agent";
 import { isOcrEnabled } from "../config";
 import ImagePreview from "../components/ImagePreview";
 import OcrResultEditor from "../components/OcrResultEditor";
 import ExtractionStatusDisplay from "../components/ExtractionStatusDisplay";
 import ExtractedInfoDisplay from "../components/ExtractedInfoDisplay";
-import Toast from "../components/Toast"; // 新しいトーストコンポーネント
+import Toast from "../components/Toast";
+import ConfirmModal from "../components/ConfirmModal";
+import CustomPromptModal from "../components/CustomPromptModal";
 
 const styles = {
   container: "p-4 w-full h-screen overflow-hidden",
@@ -29,6 +32,7 @@ const styles = {
 
 function OcrResult() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
 
   // OCR結果の状態
   const [loading, setLoading] = useState(true);
@@ -40,17 +44,19 @@ function OcrResult() {
   const [ocrWords, setOcrWords] = useState<OcrWord[]>([]);
   const [boundingBoxes, setBoundingBoxes] = useState<OcrBoundingBox[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [filename, setFilename] = useState<string>("");
 
   // 抽出結果の状態
   const [extractionStatus, setExtractionStatus] = useState<string>("pending");
   const [extractedInfo, setExtractedInfo] = useState<Record<string, any>>({});
   const [appFields, setAppFields] = useState<Field[]>([]);
-  const [appDisplayName, setAppDisplayName] = useState<string>("運送発注書");
+  const [appName, setAppName] = useState<string>("");
   const [mapping, setMapping] = useState<ExtractionMapping>({});
   const [pollingAttemptCount, setPollingAttemptCount] = useState(0);
   const [activeView, setActiveView] = useState<"ocr" | "extraction">(
     "extraction" // OCRモードに関係なく、常に抽出画面から開始
   );
+  const [verificationCompleted, setVerificationCompleted] = useState(false);
 
   // ポーリング設定
   const POLLING_INTERVAL = 3000; // 3秒
@@ -66,6 +72,9 @@ function OcrResult() {
     message: '',
     type: 'success'
   });
+  const [agentStatus, setAgentStatus] = useState<'idle' | 'running' | 'completed'>('idle');
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [customPromptModalOpen, setCustomPromptModalOpen] = useState(false);
   let statusCheckTimer: NodeJS.Timeout | null = null;
 
   // 現在のページのバウンディングボックスを生成
@@ -237,7 +246,15 @@ function OcrResult() {
 
       // OCR結果を取得
       const response = await api.get<OcrResponse>(`/ocr/result/${id}`);
-      const { ocrResult } = response.data;
+      const { ocrResult, filename, app_name } = response.data;
+      
+      // ファイル名を設定
+      setFilename(filename || "");
+      
+      // app_nameを設定
+      if (app_name) {
+        setAppName(app_name);
+      }
 
       // 署名付きURLで画像を取得
       try {
@@ -325,11 +342,17 @@ function OcrResult() {
 
       // ステータスを明示的に設定
       setExtractionStatus(response.data.status || "pending");
+      
+      // app_nameを設定
+      if (response.data.app_name) {
+        setAppName(response.data.app_name);
+      }
+
+      // 確認完了状態を設定
+      setVerificationCompleted(response.data.verification_completed || false);
 
       if (response.data.status === "completed") {
         console.log("抽出情報の取得完了 - ステータス: completed");
-        // アプリ情報を更新
-        setAppDisplayName(response.data.app_display_name || "運送発注書");
         
         // ポーリングを停止
         if (statusCheckTimer) {
@@ -353,6 +376,13 @@ function OcrResult() {
       } else if (response.data.status === "failed") {
         console.log("抽出情報の取得完了 - ステータス: failed");
         setExtractionStatus("failed");
+      } else if (response.data.status === "processing") {
+        console.log("抽出情報の取得完了 - ステータス: processing");
+        setExtractionStatus("processing");
+        // ポーリングを開始（まだ開始されていない場合）
+        if (!statusCheckTimer) {
+          startPolling();
+        }
       } else {
         console.log("抽出情報の取得完了 - ステータス:", response.data.status);
         // 完了以外のステータスが返された場合は処理中とみなす
@@ -559,6 +589,46 @@ function OcrResult() {
   const closeToast = () => {
     setToast(prev => ({ ...prev, show: false }));
   };
+
+  // エージェント実行
+  const runAgent = async (): Promise<Suggestion[]> => {
+    if (!id) return [];
+
+    try {
+      setAgentStatus('running');
+      console.log("エージェント実行中...");
+      
+      const response = await apiRunAgent(id);
+      
+      setAgentStatus('completed');
+      console.log("エージェント実行完了:", response);
+      
+      if (response.suggestions.length > 0) {
+        showToast(`${response.suggestions.length}件の修正提案があります`, 'info');
+      } else {
+        showToast('問題は検出されませんでした', 'success');
+      }
+      
+      return response.suggestions;
+    } catch (error) {
+      console.error("エージェント実行エラー:", error);
+      setAgentStatus('idle');
+      showToast('エージェント実行に失敗しました', 'error');
+      return [];
+    }
+  };
+
+  // ツール一覧取得
+  const getTools = async (): Promise<Tool[]> => {
+    try {
+      const response = await getAgentTools();
+      return response.tools || [];
+    } catch (error) {
+      console.error("ツール取得エラー:", error);
+      showToast('ツール情報の取得に失敗しました', 'error');
+      return [];
+    }
+  };
   
   // 抽出ステータスの確認
   const checkExtractionStatus = async () => {
@@ -751,8 +821,48 @@ function OcrResult() {
     };
   }, [fetchOcrResult]);
 
+  // 再度抽出ハンドラー
+  const handleReExtract = () => {
+    setShowConfirmModal(true);
+  };
+
+  const handleVerificationChange = async (completed: boolean) => {
+    if (!id) return;
+    
+    setVerificationCompleted(completed); // 楽観的UI更新
+    try {
+      await updateVerificationStatus(id, completed);
+      showToast(completed ? '確認完了にしました' : '確認完了を解除しました', 'success');
+    } catch (error) {
+      setVerificationCompleted(!completed); // エラー時はロールバック
+      showToast('確認完了の更新に失敗しました', 'error');
+    }
+  };
+
+  const executeReExtract = async () => {
+    if (!id) return;
+    
+    try {
+      setExtractionStatus("processing");
+      setPollingAttemptCount(0);
+      showToast("情報抽出を開始しました。", "info");
+      
+      // 情報抽出のみを実行（OCRスキップ）
+      await api.post(`/ocr/start/${id}?skip_ocr=true`);
+      
+      // 抽出画面に切り替え
+      setActiveView("extraction");
+      // ポーリングを開始
+      startPolling();
+    } catch (error: any) {
+      console.error("再抽出エラー:", error);
+      showToast(error.response?.data?.detail?.message || error.response?.data?.detail || "再抽出に失敗しました", "error");
+      setExtractionStatus("failed");
+    }
+  };
+
   // 表示タイトル
-  const currentViewTitle = activeView === "ocr" ? "OCR結果" : "情報抽出結果";
+  const currentViewTitle = activeView === "ocr" ? "OCR結果" : "抽出結果";
 
   // ローディングスピナーコンポーネント
   const LoadingSpinner = () => (
@@ -772,26 +882,71 @@ function OcrResult() {
         duration={3000}
       />
       
+      {/* 確認モーダル */}
+      <ConfirmModal
+        isOpen={showConfirmModal}
+        onClose={() => setShowConfirmModal(false)}
+        onConfirm={executeReExtract}
+        title="再度抽出の確認"
+        message="OCR処理と情報抽出を最初からやり直します。&#10;現在の抽出結果は上書きされますが、よろしいですか？"
+        confirmText="実行"
+        cancelText="キャンセル"
+      />
+      
       <div className={styles.row}>
         {/* 左側：画像プレビューとバウンディングボックス */}
         <div className={styles.leftPanel}>
           <div className={styles.header}>
-            <h2 className={styles.title}>
-              画像プレビュー
-              {isMultipage && (
-                <span className="text-sm font-normal ml-2">
-                  {currentPageIndex + 1}/{totalPages}
-                </span>
-              )}
-            </h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate(`/app/${appName}`)}
+                disabled={!appName}
+                className="p-2 text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                title="アップロード画面に戻る"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+              </button>
+              <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+              <span className="text-xl font-semibold text-gray-800 truncate max-w-md">
+                {filename || "画像プレビュー"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setCustomPromptModalOpen(true)}
+                className="px-3 py-1.5 bg-indigo-500 text-white rounded hover:bg-indigo-600 flex items-center gap-1.5 text-sm"
+                title="カスタムプロンプト"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                <span className="hidden sm:inline">カスタムプロンプト</span>
+              </button>
+              <button
+                onClick={handleReExtract}
+                disabled={loading || extractionStatus === 'processing'}
+                className="px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-1.5 text-sm"
+                title="再度抽出"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span className="hidden sm:inline">再度抽出</span>
+              </button>
+            </div>
             {isMultipage && (
               <div className="flex items-center gap-2">
                 <button
                   onClick={goToPreviousPage}
                   disabled={currentPageIndex === 0}
-                  className="px-3 py-1 bg-gray-500 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-gray-600"
+                  className="px-2 py-1 bg-gray-500 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-gray-600"
+                  title="前のページ"
                 >
-                  ← 前
+                  ←
                 </button>
                 <span className="text-sm text-gray-600">
                   {currentPageIndex + 1} / {totalPages}
@@ -799,9 +954,10 @@ function OcrResult() {
                 <button
                   onClick={goToNextPage}
                   disabled={currentPageIndex === totalPages - 1}
-                  className="px-3 py-1 bg-gray-500 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-gray-600"
+                  className="px-2 py-1 bg-gray-500 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-gray-600"
+                  title="次のページ"
                 >
-                  次 →
+                  →
                 </button>
               </div>
             )}
@@ -831,36 +987,6 @@ function OcrResult() {
         <div className={styles.rightPanel}>
           <div className={styles.header}>
             <h2 className={styles.title}>{currentViewTitle}</h2>
-            <div>
-              {/* 表示切替とアクションボタン */}
-              {!loading &&
-                isOcrEnabled() && (
-                  activeView === "ocr" ? (
-                    <>
-                      <button
-                        onClick={() => changeView("extraction")}
-                        className="bg-gray-500 text-white px-4 py-2 rounded"
-                      >
-                        抽出画面へ戻る
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={() => changeView("ocr")}
-                      className="bg-blue-500 text-white px-4 py-2 rounded"
-                    >
-                      OCR結果を確認/編集する
-                    </button>
-                  )
-                )}
-              
-              {/* OCRが無効な場合の表示 */}
-              {!loading && !isOcrEnabled() && activeView === "ocr" && (
-                <div className="text-gray-500 text-sm">
-                  OCRモードが無効です
-                </div>
-              )}
-            </div>
           </div>
 
           {loading ? (
@@ -872,13 +998,23 @@ function OcrResult() {
             <div className={styles.contentArea}>
               {isOcrEnabled() ? (
                 ocrWords.length > 0 ? (
-                  <OcrResultEditor
-                    ocrResults={ocrWords}
-                    selectedIndex={selectedIndex}
-                    onUpdateOcrResults={updateOcrResults}
-                    onStartExtraction={startExtraction}
-                    onSelectIndex={handleTextBoxClick}
-                  />
+                  <>
+                    <div className="mb-4 p-2">
+                      <button
+                        onClick={() => changeView("extraction")}
+                        className="px-4 py-2 rounded bg-gray-500 hover:bg-gray-600 text-white"
+                      >
+                        抽出画面へ戻る
+                      </button>
+                    </div>
+                    <OcrResultEditor
+                      ocrResults={ocrWords}
+                      selectedIndex={selectedIndex}
+                      onUpdateOcrResults={updateOcrResults}
+                      onStartExtraction={startExtraction}
+                      onSelectIndex={handleTextBoxClick}
+                    />
+                  </>
                 ) : (
                   <div className="flex justify-center items-center flex-grow text-gray-500">
                     <div className="text-center">
@@ -912,17 +1048,32 @@ function OcrResult() {
                 <ExtractedInfoDisplay
                   extractedInfo={extractedInfo}
                   fields={appFields}
-                  appDisplayName={appDisplayName}
                   onSave={saveExtractedInfo}
                   onHighlightField={highlightField}
                   onHighlightCell={highlightTableCell}
                   onUpdateExtractedInfo={updateExtractedInfo}
+                  onRunAgent={runAgent}
+                  agentStatus={agentStatus}
+                  onGetTools={getTools}
+                  activeView={activeView}
+                  onBackToExtraction={() => changeView("extraction")}
+                  onViewOcr={() => changeView("ocr")}
+                  isOcrEnabled={isOcrEnabled()}
+                  verificationCompleted={verificationCompleted}
+                  onVerificationChange={handleVerificationChange}
                 />
               )}
             </div>
           )}
         </div>
       </div>
+
+      {/* カスタムプロンプトモーダル */}
+      <CustomPromptModal
+        isOpen={customPromptModalOpen}
+        onClose={() => setCustomPromptModalOpen(false)}
+        appName={appName}
+      />
     </div>
   );
 }

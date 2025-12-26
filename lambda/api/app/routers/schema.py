@@ -72,13 +72,24 @@ async def update_custom_prompt(app_name: str, request: CustomPromptRequest):
 
 
 @router.post("/apps")
-async def create_app(app_data: dict):
-    """新しいアプリを作成または更新する"""
+async def create_app(request: SchemaSaveRequest):
+    """アプリを新規作成する"""
     try:
-        result = await schema_service.create_app(app_data)
+        result = await schema_service.save_schema(request)
         return result
     except Exception as e:
         logger.error(f"Error creating app: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put("/apps/{app_name}")
+async def update_app(app_name: str, request: SchemaSaveRequest):
+    """既存アプリを更新する"""
+    try:
+        result = await schema_service.update_schema(app_name, request)
+        return result
+    except Exception as e:
+        logger.error(f"Error updating app: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -93,46 +104,23 @@ async def delete_app(app_name: str):
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
-# スキーマ管理エンドポイント
-@router.post("/schema/save")
-async def save_schema(request: SchemaSaveRequest):
-    """スキーマを保存する"""
-    try:
-        result = await schema_service.save_schema(request)
-        return result
-    except Exception as e:
-        logger.error(f"Error saving schema: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.post("/schema/generate-presigned-url")
-async def generate_schema_presigned_url(request: PresignedUrlRequest):
-    """スキーマ用の署名付きURLを生成する"""
+@router.post("/apps/schema/generate-presigned-url")
+async def generate_app_schema_presigned_url(request: PresignedUrlRequest):
+    """アプリスキーマ用の署名付きURLを生成する"""
     try:
         result = await schema_service.generate_schema_presigned_url(request)
         return result
     except Exception as e:
-        logger.error(f"Error generating schema presigned URL: {str(e)}")
+        logger.error(f"Error generating app schema presigned URL: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
-@router.post("/schema/generate")
-async def generate_schema(request: SchemaGenerateRequest):
-    """スキーマを自動生成する"""
+@router.post("/apps/{app_name}/schema/generate")
+async def generate_app_schema(app_name: str, request: SchemaGenerateRequest):
+    """アプリのスキーマを自動生成する"""
     try:
         result = await schema_service.generate_schema(request)
         return result
     except Exception as e:
-        logger.error(f"Error generating schema: {str(e)}")
+        logger.error(f"Error generating app schema: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-
-
-@router.put("/schema/update/{app_name}")
-async def update_schema(app_name: str, request: SchemaSaveRequest):
-    """既存のスキーマを更新する"""
-    try:
-        result = await schema_service.update_schema(app_name, request)
-        return result
-    except Exception as e:
-        logger.error(f"Error updating schema: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))

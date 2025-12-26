@@ -7,6 +7,8 @@ export interface ExtractionResponse {
   app_name: string;
   app_display_name: string;
   fields: Field[];
+  verification_completed?: boolean;
+  verification_completed_at?: string;
 }
 
 // 階層構造に対応したマッピング型

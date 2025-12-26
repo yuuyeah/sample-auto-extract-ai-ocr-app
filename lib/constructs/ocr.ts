@@ -1,4 +1,14 @@
 import * as cdk from "aws-cdk-lib";
+import {
+  ScalableTarget,
+  ServiceNamespace,
+  TargetTrackingScalingPolicy,
+  StepScalingPolicy,
+  PredefinedMetric,
+  AdjustmentType,
+  MetricAggregationType,
+} from "aws-cdk-lib/aws-applicationautoscaling";
+import { Metric } from "aws-cdk-lib/aws-cloudwatch";
 import { DockerImageAsset, Platform } from "aws-cdk-lib/aws-ecr-assets";
 import {
   ManagedPolicy,
@@ -20,6 +30,8 @@ export interface OcrProps {
   ocrEngine?: "paddle" | "deepseek";
   instanceType?: string;
   environment?: Record<string, string>;
+  enableZeroScale?: boolean;
+  scaleInCooldownSeconds?: number;
 }
 
 export class Ocr extends Construct {
@@ -33,12 +45,14 @@ export class Ocr extends Construct {
     // デフォルト値の設定
     const baseName = props.baseName || "ocr";
     const ocrEngine = props.ocrEngine || "paddle";
-    const instanceType = props.instanceType || (ocrEngine === "paddle" ? "ml.g5.2xlarge" : "ml.g5.4xlarge");
+    const instanceType =
+      props.instanceType ||
+      (ocrEngine === "paddle" ? "ml.g4dn.2xlarge" : "ml.g4dn.4xlarge");
 
     // OCRエンジンに応じたコンテナパス
     const containerMap = {
-      paddle: "paddle-ocr", 
-      deepseek: "deepseek-ocr"
+      paddle: "paddle-ocr",
+      deepseek: "deepseek-ocr",
     };
     const containerPath = path.join(
       __dirname,
@@ -59,11 +73,11 @@ export class Ocr extends Construct {
     if (ocrEngine === "deepseek") {
       defaultEnv = {
         ...defaultEnv,
-        CROP_MODE: 'true',
-        MODEL_PATH: 'deepseek-ai/DeepSeek-OCR',
-        TORCH_CUDA_ARCH_LIST: '8.6',
-        NVIDIA_VISIBLE_DEVICES: 'all',
-        NVIDIA_DRIVER_CAPABILITIES: 'compute,utility',
+        CROP_MODE: "true",
+        MODEL_PATH: "deepseek-ai/DeepSeek-OCR",
+        TORCH_CUDA_ARCH_LIST: "8.6",
+        NVIDIA_VISIBLE_DEVICES: "all",
+        NVIDIA_DRIVER_CAPABILITIES: "compute,utility",
       };
     }
 
@@ -144,14 +158,14 @@ export class Ocr extends Construct {
     });
 
     this.endpointName = endpoint.attrEndpointName;
-    
+
     endpoint.addDependency(endpointConfig);
 
     // OCRエンジンに応じたリソース要件
     let cpuCores = 1;
     let memoryMb = 4096;
     let acceleratorDevices = 1;
-    
+
     if (ocrEngine === "deepseek") {
       cpuCores = 8;
       memoryMb = 42768;
@@ -181,6 +195,56 @@ export class Ocr extends Construct {
 
     inferenceComponent.addDependency(endpoint);
     inferenceComponent.addDependency(model);
+
+    // Auto Scaling設定（ゼロスケール）
+    if (props.enableZeroScale) {
+      const resourceId = `inference-component/${this.inferenceComponentName}`;
+
+      const scalableTarget = new ScalableTarget(this, "ScalableTarget", {
+        serviceNamespace: ServiceNamespace.SAGEMAKER,
+        scalableDimension: "sagemaker:inference-component:DesiredCopyCount",
+        resourceId: resourceId,
+        minCapacity: 0,
+        maxCapacity: 1,
+      });
+
+      scalableTarget.node.addDependency(inferenceComponent);
+
+      // ターゲットトラッキングポリシー（スケールイン用）
+      new TargetTrackingScalingPolicy(this, "TargetTrackingPolicy", {
+        scalingTarget: scalableTarget,
+        targetValue: 1,
+        predefinedMetric:
+          PredefinedMetric.SAGEMAKER_INFERENCE_COMPONENT_INVOCATIONS_PER_COPY,
+        scaleInCooldown: cdk.Duration.seconds(
+          props.scaleInCooldownSeconds || 3600
+        ),
+        scaleOutCooldown: cdk.Duration.seconds(60),
+      });
+
+      // ステップスケーリングポリシー（スケールアウト用）
+      const noCapacityMetric = new Metric({
+        namespace: "AWS/SageMaker",
+        metricName: "NoCapacityInvocationFailures",
+        dimensionsMap: {
+          InferenceComponentName: this.inferenceComponentName,
+        },
+        statistic: "Maximum",
+        period: cdk.Duration.seconds(60),
+      });
+
+      new StepScalingPolicy(this, "StepScalingPolicy", {
+        scalingTarget: scalableTarget,
+        adjustmentType: AdjustmentType.CHANGE_IN_CAPACITY,
+        metricAggregationType: MetricAggregationType.MAXIMUM,
+        cooldown: cdk.Duration.seconds(60),
+        scalingSteps: [
+          { change: 1, lower: 0 },
+          { change: 0, upper: -1 },
+        ],
+        metric: noCapacityMetric,
+      });
+    }
 
     this.sagemakerRoleArn = sagemakerRole.roleArn;
 

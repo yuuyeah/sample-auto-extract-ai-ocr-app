@@ -6,7 +6,9 @@ import { useAppContext } from "../components/AppContext";
 import FileList from "../components/FileList";
 import OcrActionBar from "../components/OcrActionBar";
 import S3SyncModal from "../components/S3SyncModal";
-import CustomPromptModal from "../components/CustomPromptModal"; // 追加
+import CustomPromptModal from "../components/CustomPromptModal";
+import ConfirmModal from "../components/ConfirmModal";
+import LoadingToast from "../components/LoadingToast";
 
 function Upload() {
   const { appName } = useParams<{ appName: string }>();
@@ -21,8 +23,9 @@ function Upload() {
     [key: string]: number;
   }>({});
   const [s3SyncModalOpen, setS3SyncModalOpen] = useState(false);
-  const [customPromptModalOpen, setCustomPromptModalOpen] = useState(false); // 追加
-  const [pageProcessingMode, setPageProcessingMode] = useState<'combined' | 'individual'>('combined'); // 追加
+  const [customPromptModalOpen, setCustomPromptModalOpen] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [pageProcessingMode, setPageProcessingMode] = useState<'combined' | 'individual'>('combined');
 
   // 現在選択されているアプリの情報
   const selectedApp = apps.find(app => app.name === appName);
@@ -33,6 +36,7 @@ function Upload() {
   const [files, setFiles] = useState<ImageFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [isEndpointWarming, setIsEndpointWarming] = useState(false);
   // pollingEnabledは使用されているので削除しない
   const [pollingEnabled] = useState(true);
 
@@ -60,10 +64,40 @@ function Upload() {
         // 成功したら即座に一覧を更新
         fetchFiles();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("OCR処理の開始に失敗しました:", error);
+      
+      // エンドポイント起動中エラーの場合
+      if (error.response?.status === 503 && error.response?.data?.detail?.error === 'endpoint_not_ready') {
+        setIsEndpointWarming(true);
+        setIsProcessing(false);
+        
+        // 10秒ごとにポーリング
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusResponse = await api.get('/ocr/endpoint-status');
+            
+            if (statusResponse.data.ready) {
+              clearInterval(pollInterval);
+              setIsEndpointWarming(false);
+              
+              // リトライ
+              const retryResponse = await api.post("/ocr/start", { app_name: appName });
+              if (retryResponse.data?.jobId) {
+                fetchFiles();
+              }
+            }
+          } catch (pollError) {
+            console.error('ポーリングエラー:', pollError);
+          }
+        }, 10000);
+        
+        return;
+      }
     } finally {
-      setIsProcessing(false);
+      if (!isEndpointWarming) {
+        setIsProcessing(false);
+      }
     }
   };
 
@@ -90,6 +124,17 @@ function Upload() {
   // カスタムプロンプトモーダルを閉じる
   const closeCustomPromptModal = () => {
     setCustomPromptModalOpen(false);
+  };
+
+  // アプリ削除を実行
+  const executeDelete = async () => {
+    try {
+      await api.delete(`/apps/${appName}`);
+      await refreshApps();
+      navigate('/');
+    } catch (err: any) {
+      setError(`削除に失敗しました: ${err.message}`);
+    }
   };
 
   // S3ファイルインポート完了時の処理
@@ -283,22 +328,7 @@ function Upload() {
               
               {/* 削除ボタン */}
               <button
-                onClick={() => {
-                  if (window.confirm(`アプリ「${appDisplayName || appName}」を削除してもよろしいですか？`)) {
-                    // 削除APIを呼び出す
-                    api.delete(`/apps/${appName}`)
-                      .then(() => {
-                        // AppContextのアプリ一覧を更新
-                        refreshApps().then(() => {
-                          // 成功したらトップページに戻る
-                          navigate('/');
-                        });
-                      })
-                      .catch(err => {
-                        setError(`削除に失敗しました: ${err.message}`);
-                      });
-                  }
-                }}
+                onClick={() => setShowDeleteConfirm(true)}
                 className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg flex items-center"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -530,6 +560,23 @@ function Upload() {
         isOpen={customPromptModalOpen}
         onClose={closeCustomPromptModal}
         appName={appName || ""}
+      />
+
+      {/* 削除確認モーダル */}
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={executeDelete}
+        title="アプリの削除"
+        message={`アプリ「${appDisplayName || appName}」を削除してもよろしいですか？`}
+        confirmText="削除"
+        cancelText="キャンセル"
+      />
+
+      {/* エンドポイント起動中表示 */}
+      <LoadingToast
+        show={isEndpointWarming}
+        message={`OCRエンドポイント起動中（約10分）\n\nこの画面を開いたままにすると起動後に自動でOCR処理を開始します。\n画面を閉じてもバックグラウンドで起動処理は継続されます。`}
       />
     </div>
   );

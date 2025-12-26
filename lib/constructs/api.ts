@@ -1,10 +1,4 @@
-import {
-  Duration,
-  RemovalPolicy,
-  Stack,
-  StackProps,
-  CfnOutput,
-} from "aws-cdk-lib";
+import { Duration, RemovalPolicy, CfnOutput } from "aws-cdk-lib";
 import { Construct } from "constructs";
 import {
   BlockPublicAccess,
@@ -18,14 +12,7 @@ import {
   ServicePrincipal,
   ManagedPolicy,
 } from "aws-cdk-lib/aws-iam";
-import {
-  Runtime,
-  Architecture,
-  DockerImageCode,
-  DockerImageFunction,
-  FunctionUrl,
-  FunctionUrlAuthType,
-} from "aws-cdk-lib/aws-lambda";
+import { DockerImageCode, DockerImageFunction } from "aws-cdk-lib/aws-lambda";
 import {
   RestApi,
   LambdaIntegration,
@@ -42,15 +29,20 @@ export interface ApiProps {
   imagesTable: Table;
   jobsTable: Table;
   schemasTable: Table;
+  toolsTable?: Table;
   userPoolId: string;
   userPoolClientId: string;
   enableOcr: boolean;
   sagemakerEndpointName?: string;
   sagemakerInferenceComponentName?: string;
+  agentRuntimeArn?: string;
 }
 
 export class Api extends Construct {
   public readonly apiEndpoint: string;
+  public readonly documentBucket: Bucket;
+  public readonly syncBucket: Bucket;
+  public readonly handler: DockerImageFunction;
 
   constructor(scope: Construct, id: string, props: ApiProps) {
     super(scope, id);
@@ -60,7 +52,7 @@ export class Api extends Construct {
     // cdk.jsonからモデルIDとリージョンを取得
     const modelId =
       this.node.tryGetContext("model_id") ||
-      "anthropic.claude-3-5-sonnet-20240620-v1:0";
+      "us.anthropic.claude-sonnet-4-20250514-v1:0";
     const modelRegion = this.node.tryGetContext("model_region") || "us-east-1";
 
     // S3バケット（ドキュメント保存用）
@@ -87,6 +79,15 @@ export class Api extends Construct {
       ],
     });
 
+    // S3バケット（同期用）
+    const syncBucket = new Bucket(this, "SyncBucket", {
+      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+      encryption: BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+    });
+
     // Lambda実行ロール
     const lambdaRole = new Role(this, "LambdaExecutionRole", {
       assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
@@ -101,7 +102,12 @@ export class Api extends Construct {
     lambdaRole.addToPolicy(
       new PolicyStatement({
         actions: ["s3:*"],
-        resources: [documentBucket.bucketArn, `${documentBucket.bucketArn}/*`],
+        resources: [
+          documentBucket.bucketArn, 
+          `${documentBucket.bucketArn}/*`,
+          syncBucket.bucketArn,
+          `${syncBucket.bucketArn}/*`
+        ],
       })
     );
 
@@ -109,7 +115,10 @@ export class Api extends Construct {
     if (props.enableOcr && props.sagemakerEndpointName) {
       lambdaRole.addToPolicy(
         new PolicyStatement({
-          actions: ["sagemaker:InvokeEndpoint"],
+          actions: [
+            "sagemaker:InvokeEndpoint",
+            "sagemaker:DescribeInferenceComponent",
+          ],
           resources: ["*"],
         })
       );
@@ -141,6 +150,7 @@ export class Api extends Construct {
           imagesTable.tableArn,
           jobsTable.tableArn,
           props.schemasTable.tableArn,
+          ...(props.toolsTable ? [props.toolsTable.tableArn] : []),
           `${imagesTable.tableArn}/index/*`, // GSIへのアクセス権限も追加
         ],
       })
@@ -155,15 +165,18 @@ export class Api extends Construct {
       memorySize: 4096,
       environment: {
         BUCKET_NAME: documentBucket.bucketName,
+        SYNC_BUCKET_NAME: syncBucket.bucketName,
         IMAGES_TABLE_NAME: imagesTable.tableName,
         JOBS_TABLE_NAME: jobsTable.tableName,
         SCHEMAS_TABLE_NAME: props.schemasTable.tableName,
+        TOOLS_TABLE_NAME: props.toolsTable?.tableName || "",
         ENABLE_OCR: props.enableOcr.toString(),
         SAGEMAKER_ENDPOINT_NAME: props.sagemakerEndpointName || "",
         SAGEMAKER_INFERENCE_COMPONENT_NAME:
           props.sagemakerInferenceComponentName || "",
         MODEL_ID: modelId,
         MODEL_REGION: modelRegion,
+        AGENT_RUNTIME_ARN: props.agentRuntimeArn || "",
         PORT: "8080",
         // Lambda Web Adapter関連の環境変数
         AWS_LWA_PORT: "8080",
@@ -171,6 +184,20 @@ export class Api extends Construct {
       },
       role: lambdaRole,
     });
+
+    // プロパティに保存
+    this.handler = lambdaFunction;
+    this.documentBucket = documentBucket;
+
+    // AgentRuntime呼び出し権限
+    if (props.agentRuntimeArn) {
+      lambdaFunction.addToRolePolicy(
+        new PolicyStatement({
+          actions: ["bedrock-agentcore:InvokeAgentRuntime"],
+          resources: [props.agentRuntimeArn, props.agentRuntimeArn + "/*"],
+        })
+      );
+    }
 
     // Cognitoユーザープール参照
     const userPool = UserPool.fromUserPoolId(
@@ -271,5 +298,13 @@ export class Api extends Construct {
       value: documentBucket.bucketName,
       description: "S3 Document Bucket Name",
     });
+
+    new CfnOutput(this, "SyncBucketName", {
+      value: syncBucket.bucketName,
+      description: "S3 Sync Bucket Name",
+    });
+
+    // プロパティに割り当て
+    this.syncBucket = syncBucket;
   }
 }

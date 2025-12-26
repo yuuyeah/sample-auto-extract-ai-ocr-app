@@ -12,8 +12,8 @@ from PIL import Image
 import tempfile
 
 from config import settings
-from database import get_image, update_image_status, update_converted_image, update_ocr_result, update_parent_document_status, create_individual_page_record
-from app_schema import DEFAULT_APP, get_app_input_methods
+from repositories import get_image, update_image_status, update_converted_image, update_ocr_result, update_parent_document_status, create_individual_page_record
+from repositories import get_app_input_methods
 from utils.helpers import resize_image
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,11 @@ def convert_pdf_to_image(image_id: str, s3_key: str):
 
         # 画像情報を取得してバケット名と処理モードを決定
         image_data = get_image(image_id)
-        app_name = image_data.get("app_name", DEFAULT_APP)
+        app_name = image_data.get("app_name")
+        if not app_name:
+            logger.error(f"app_name not found for image {image_id}")
+            raise ValueError(f"app_name not found for image {image_id}")
+        
         processing_mode = image_data.get("page_processing_mode", "combined")
         input_methods = get_app_input_methods(app_name)
 

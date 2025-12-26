@@ -16,15 +16,8 @@ function Home() {
   };
   
   // フォールバック用のデフォルト説明を取得
-  const getDefaultDescription = (appName: string) => {
-    const descriptions: Record<string, string> = {
-      'shipping_ocr': '輸送伝票や納品書の情報を抽出します',
-      'invoice_ocr': '請求書や領収書の情報を抽出します',
-      'receipt_ocr': 'レシートからの情報を抽出します',
-      'inventory_management': '倉庫や店舗の在庫情報を管理します'
-    };
-    
-    return descriptions[appName] || 'このアプリケーションでは文書からの情報抽出を行います';
+  const getDefaultDescription = () => {
+    return '文書からの情報抽出を行います';
   };
 
   return (
@@ -65,7 +58,7 @@ function Home() {
             </div>
             <h2 className="text-xl font-semibold mb-2 text-center text-gray-800">{app.display_name}</h2>
             <div className="text-sm text-gray-600 mb-4 text-center">
-              {app.description || getDefaultDescription(app.name)}
+              {app.description || getDefaultDescription()}
             </div>
             <div className="mt-4 text-center">
               <button 

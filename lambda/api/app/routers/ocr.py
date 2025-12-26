@@ -5,39 +5,31 @@ from schemas import (
     OcrResultResponse, OcrStartRequest, JobStartResponse, OcrResult
 )
 from services.ocr_service import OcrService
+from repositories import get_inference_component_status
+from config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ocr", tags=["OCR"])
 
-# OCRサービスのインスタンス（main.pyでbackground_taskが設定される）
+# OCRサービスのインスタンス
 ocr_service = OcrService()
-
-
-def set_background_task(background_task):
-    """main.pyからバックグラウンドタスクを設定する"""
-    global ocr_service
-    ocr_service = OcrService(background_task)
 
 
 @router.post("/start", response_model=JobStartResponse)
 async def start_ocr(request: OcrStartRequest = OcrStartRequest()):
-    """OCR処理を開始する"""
+    """OCR処理を開始する（Step Functions版）"""
     try:
-        job_id = await ocr_service.start_ocr_job(request.app_name)
-        return JobStartResponse(jobId=job_id)
+        result = await ocr_service.start_step_functions_job(request)
+        return JobStartResponse(jobId=result["jobId"])
+    except ValueError as e:
+        if str(e) == 'endpoint_not_ready':
+            raise HTTPException(
+                status_code=503,
+                detail={"error": "endpoint_not_ready", "message": "Endpoint warming up"}
+            )
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"OCR job start error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-
-
-@router.get("/status/{job_id}")
-async def get_ocr_status(job_id: str):
-    """OCRジョブのステータスを取得する"""
-    try:
-        status = await ocr_service.get_job_status(job_id)
-        return status
-    except Exception as e:
-        logger.error(f"Error getting job status: {str(e)}")
+        logger.error(f"Error starting OCR job: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
@@ -60,4 +52,33 @@ async def update_ocr_result(image_id: str, edited_ocr_data: dict):
         return {"status": "success", "message": "OCR results updated successfully"}
     except Exception as e:
         logger.error(f"Error updating OCR result: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.post("/start/{image_id}")
+async def start_ocr_for_image(image_id: str, skip_ocr: bool = False):
+    """指定した画像IDのOCR処理を開始する（Step Functions版）"""
+    try:
+        result = await ocr_service.start_step_functions_for_image(image_id, skip_ocr)
+        return result
+    except ValueError as e:
+        if str(e) == 'endpoint_not_ready':
+            raise HTTPException(
+                status_code=503,
+                detail={"error": "endpoint_not_ready", "message": "Endpoint warming up"}
+            )
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error starting OCR for image: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.get("/endpoint-status")
+async def get_endpoint_status():
+    """エンドポイントの状態を確認（ポーリング用）"""
+    try:
+        status = get_inference_component_status()
+        return status
+    except Exception as e:
+        logger.error(f"Error checking endpoint status: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")

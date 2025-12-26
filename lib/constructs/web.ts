@@ -13,12 +13,14 @@ export interface WebProps {
   userPoolClientId: string;
   apiUrl: string;
   enableOcr: boolean;
+  enableAgent: boolean;
+  syncBucketName: string;
 }
 export class Web extends Construct {
   constructor(scope: Construct, id: string, props: WebProps) {
     super(scope, id);
 
-    const { buildFolder, userPoolId, userPoolClientId, apiUrl, enableOcr } = props;
+    const { buildFolder, userPoolId, userPoolClientId, apiUrl, enableOcr, enableAgent, syncBucketName } = props;
 
     const bucketProps: s3.BucketProps = {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -106,6 +108,8 @@ export class Web extends Construct {
         VITE_APP_REGION: Stack.of(this).region,
         VITE_API_BASE_URL: apiUrl,
         VITE_ENABLE_OCR: enableOcr.toString(),
+        VITE_ENABLE_AGENT: enableAgent.toString(),
+        VITE_SYNC_BUCKET_NAME: syncBucketName,
       },
     });
 

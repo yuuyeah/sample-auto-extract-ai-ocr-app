@@ -4,8 +4,8 @@ import json
 import logging
 import base64
 
-from app_schema import get_extraction_fields_for_app, get_field_names_for_app, DEFAULT_APP
-from database import get_image, update_extracted_info, update_image_status, update_ocr_result
+from repositories import get_extraction_fields_for_app, get_field_names_for_app
+from repositories import get_image, update_extracted_info, update_image_status, update_ocr_result
 
 logger = logging.getLogger(__name__)
 

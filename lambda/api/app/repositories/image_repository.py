@@ -1,4 +1,4 @@
-from clients import dynamodb_resource
+from clients import dynamodb_resource, s3_client
 import logging
 from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
@@ -6,8 +6,6 @@ from fastapi import HTTPException
 from datetime import datetime
 import uuid
 from config import settings
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -28,24 +26,9 @@ def get_images_table():
     return dynamodb_resource.Table(table_name)
 
 
-def get_jobs_table():
-    """
-    ジョブテーブルのリソースを取得する
-
-    Returns:
-        boto3.resources.factory.dynamodb_resource.Table: DynamoDB テーブルリソース
-    """
-    table_name = settings.JOBS_TABLE_NAME
-    if not table_name:
-        logger.error("JOBS_TABLE_NAME 環境変数が設定されていません")
-        raise HTTPException(
-            status_code=500, detail="Database configuration error")
-
-    return dynamodb_resource.Table(table_name)
-
-
 def create_image_record(image_id, filename, s3_key, app_name="default", status="pending", converted_s3_key=None,
-                        page_processing_mode="combined", total_pages=None, page_number=None, parent_document_id=None):
+                        page_processing_mode="combined", total_pages=None, page_number=None, parent_document_id=None,
+                        sync_source_path=None):
     """
     画像レコードを作成する
 
@@ -60,6 +43,7 @@ def create_image_record(image_id, filename, s3_key, app_name="default", status="
         total_pages (int, optional): 総ページ数
         page_number (int, optional): ページ番号（個別処理の場合）
         parent_document_id (str, optional): 親ドキュメントID（個別処理の場合）
+        sync_source_path (str, optional): S3同期元のパス
 
     Returns:
         str: 作成された画像のID
@@ -88,6 +72,10 @@ def create_image_record(image_id, filename, s3_key, app_name="default", status="
             item["page_number"] = page_number
         if parent_document_id is not None:
             item["parent_document_id"] = parent_document_id
+
+        # S3同期元パスがある場合は追加
+        if sync_source_path is not None:
+            item["sync_source_path"] = sync_source_path
 
         # 変換後のS3キーがある場合は追加
         if converted_s3_key:
@@ -149,7 +137,8 @@ def get_images(app_name=None):
                 "pageProcessingMode": item.get("page_processing_mode"),
                 "totalPages": item.get("total_pages"),
                 "pageNumber": item.get("page_number"),
-                "parentDocumentId": item.get("parent_document_id")
+                "parentDocumentId": item.get("parent_document_id"),
+                "verificationCompleted": item.get("verification_completed", False)
             })
 
         return images
@@ -285,126 +274,6 @@ def get_image(image_id):
             status_code=500, detail=f"Database error: {str(e)}")
 
 
-def create_job(job_id=None, status="processing"):
-    """
-    ジョブを作成する
-
-    Args:
-        job_id (str, optional): ジョブID
-        status (str): ジョブステータス
-
-    Returns:
-        str: 作成されたジョブのID
-    """
-    if not job_id:
-        job_id = str(uuid.uuid4())
-
-    table = get_jobs_table()
-    current_time = datetime.now().isoformat()
-
-    try:
-        item = {
-            "id": job_id,
-            "status": status,
-            "created_at": current_time,
-            "updated_at": current_time
-        }
-
-        table.put_item(Item=item)
-        return job_id
-    except Exception as e:
-        logger.error(f"ジョブ作成エラー: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Database error: {str(e)}")
-
-
-def update_job_status(job_id, status):
-    """
-    ジョブステータスを更新する
-
-    Args:
-        job_id (str): ジョブID
-        status (str): 新しいステータス
-    """
-    table = get_jobs_table()
-    current_time = datetime.now().isoformat()
-
-    try:
-        table.update_item(
-            Key={"id": job_id},
-            UpdateExpression="SET #status = :status, updated_at = :updated_at",
-            ExpressionAttributeNames={"#status": "status"},
-            ExpressionAttributeValues={
-                ":status": status,
-                ":updated_at": current_time
-            }
-        )
-    except Exception as e:
-        logger.error(f"ジョブステータス更新エラー: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Database error: {str(e)}")
-
-
-def get_job(job_id):
-    """
-    ジョブ情報を取得する
-
-    Args:
-        job_id (str): ジョブID
-
-    Returns:
-        dict: ジョブ情報
-    """
-    table = get_jobs_table()
-
-    try:
-        response = table.get_item(Key={"id": job_id})
-        item = response.get("Item")
-
-        if not item:
-            raise HTTPException(status_code=404, detail="Job not found")
-
-        return item
-    except ClientError as e:
-        logger.error(f"ジョブ取得エラー: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Database error: {str(e)}")
-
-
-def get_images_by_job_id(job_id):
-    """
-    ジョブIDに関連する画像を取得する
-
-    Args:
-        job_id (str): ジョブID
-
-    Returns:
-        list: 画像リスト
-    """
-    table = get_images_table()
-
-    try:
-        # job_id でフィルタリングするにはスキャンが必要
-        # 頻繁に使用する場合は GSI を追加すべき
-        response = table.scan(
-            FilterExpression=Key('job_id').eq(job_id)
-        )
-
-        images = []
-        for item in response.get('Items', []):
-            images.append({
-                "id": item.get("id"),
-                "filename": item.get("filename"),
-                "status": item.get("status")
-            })
-
-        return images
-    except Exception as e:
-        logger.error(f"ジョブ関連画像取得エラー: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Database error: {str(e)}")
-
-
 def update_converted_image(image_id, converted_s3_key, status=None, original_size=None, resized_size=None,
                            page_processing_mode=None, total_pages=None):
     """
@@ -508,36 +377,50 @@ def delete_images_by_app_name(app_name: str):
         return False
 
 
-def delete_jobs_by_app_name(app_name: str):
+def delete_image(image_id: str) -> bool:
     """
-    指定されたアプリ名に関連する全てのジョブデータを削除する
+    画像レコードを削除する
 
     Args:
-        app_name (str): アプリ名
+        image_id (str): 画像ID
 
     Returns:
         bool: 削除が成功したかどうか
     """
     try:
-        table = get_jobs_table()
-
-        # アプリ名でフィルタリングしてスキャン
-        response = table.scan(
-            FilterExpression=Key('app_name').eq(app_name)
-        )
-
-        # 取得したジョブを削除
-        deleted_count = 0
-        for item in response.get('Items', []):
-            table.delete_item(Key={'id': item['id']})
-            deleted_count += 1
-
-        logger.info(f"アプリ '{app_name}' に関連する {deleted_count} 件のジョブデータを削除しました")
+        table = get_images_table()
+        table.delete_item(Key={'id': image_id})
+        logger.info(f"Deleted image: {image_id}")
         return True
-
     except Exception as e:
-        logger.error(f"ジョブデータ削除エラー (app_name: {app_name}): {str(e)}")
+        logger.error(f"Error deleting image {image_id}: {str(e)}")
         return False
+
+
+def update_verification_status(image_id: str, verification_completed: bool) -> None:
+    """
+    確認完了ステータスを更新する
+
+    Args:
+        image_id (str): 画像ID
+        verification_completed (bool): 確認完了フラグ
+    """
+    table = get_images_table()
+    current_time = datetime.now().isoformat()
+    
+    try:
+        table.update_item(
+            Key={"id": image_id},
+            UpdateExpression="SET verification_completed = :completed, verification_completed_at = :timestamp",
+            ExpressionAttributeValues={
+                ":completed": verification_completed,
+                ":timestamp": current_time if verification_completed else None
+            }
+        )
+        logger.info(f"確認完了ステータスを更新: {image_id} -> {verification_completed}")
+    except Exception as e:
+        logger.error(f"確認完了ステータス更新エラー: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 def create_individual_page_record(page_id: str, parent_image_id: str, filename: str,
@@ -694,3 +577,53 @@ def check_and_update_parent_status(parent_id: str):
 
     except Exception as e:
         logger.error(f"親ステータス更新エラー: {str(e)}")
+
+
+def create_s3_sync_folder(app_name: str) -> None:
+    """S3同期フォルダを作成する"""
+    try:
+        sync_bucket = settings.SYNC_BUCKET_NAME
+        
+        # フォルダ作成用の空オブジェクトを作成
+        folder_key = f"{app_name}/"
+        s3_client.put_object(
+            Bucket=sync_bucket,
+            Key=folder_key,
+            Body=b'',
+            ContentType='application/x-directory'
+        )
+        
+        logger.info(f"Created S3 sync folder: s3://{sync_bucket}/{folder_key}")
+    except Exception as e:
+        logger.warning(f"Failed to create S3 sync folder for {app_name}: {str(e)}")
+        # S3フォルダ作成失敗はアプリ作成を止めない
+
+
+def get_images_by_sync_source(filename: str, sync_source_path: str, app_name: str = None):
+    """
+    ファイル名と同期元パスで既存ファイルを検索する
+
+    Args:
+        filename (str): 検索するファイル名
+        sync_source_path (str): 同期元のS3パス
+        app_name (str, optional): アプリ名でフィルタ
+
+    Returns:
+        list: マッチする画像のリスト
+    """
+    try:
+        table = get_images_table()
+
+        # ファイル名と同期元パスで検索
+        filter_expression = Attr('filename').eq(filename) & Attr('sync_source_path').eq(sync_source_path)
+
+        # アプリ名でのフィルタも追加
+        if app_name:
+            filter_expression = filter_expression & Attr('app_name').eq(app_name)
+
+        response = table.scan(FilterExpression=filter_expression)
+        return response.get('Items', [])
+
+    except Exception as e:
+        logger.error(f"同期元パスでの画像検索エラー: {str(e)}")
+        return []
