@@ -25,7 +25,7 @@ async def start_ocr(request: OcrStartRequest = OcrStartRequest()):
         if str(e) == 'endpoint_not_ready':
             raise HTTPException(
                 status_code=503,
-                detail="Endpoint warming up"
+                detail={"error": "endpoint_not_ready", "message": "Endpoint warming up"}
             )
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -65,7 +65,7 @@ async def start_ocr_for_image(image_id: str):
         if str(e) == 'endpoint_not_ready':
             raise HTTPException(
                 status_code=503,
-                detail="Endpoint warming up"
+                detail={"error": "endpoint_not_ready", "message": "Endpoint warming up"}
             )
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

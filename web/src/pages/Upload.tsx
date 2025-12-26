@@ -67,7 +67,8 @@ function Upload() {
     } catch (error: any) {
       console.error("OCR処理の開始に失敗しました:", error);
       
-      if (error.response?.status === 503) {
+      // エンドポイント起動中エラーの場合
+      if (error.response?.status === 503 && error.response?.data?.detail?.error === 'endpoint_not_ready') {
         setIsEndpointWarming(true);
         setIsProcessing(false);
         

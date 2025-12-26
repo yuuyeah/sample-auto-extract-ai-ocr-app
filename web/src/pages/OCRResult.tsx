@@ -13,7 +13,6 @@ import ExtractedInfoDisplay from "../components/ExtractedInfoDisplay";
 import Toast from "../components/Toast";
 import ConfirmModal from "../components/ConfirmModal";
 import CustomPromptModal from "../components/CustomPromptModal";
-import LoadingToast from "../components/LoadingToast";
 
 const styles = {
   container: "p-4 w-full h-screen overflow-hidden",
@@ -76,7 +75,6 @@ function OcrResult() {
   const [agentStatus, setAgentStatus] = useState<'idle' | 'running' | 'completed'>('idle');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [customPromptModalOpen, setCustomPromptModalOpen] = useState(false);
-  const [isEndpointWarming, setIsEndpointWarming] = useState(false);
   let statusCheckTimer: NodeJS.Timeout | null = null;
 
   // 現在のページのバウンディングボックスを生成
@@ -847,11 +845,10 @@ function OcrResult() {
     try {
       setExtractionStatus("processing");
       setPollingAttemptCount(0);
-      setIsEndpointWarming(false);
-      showToast("OCR処理を開始しました。完了後、自動的に情報抽出が実行されます。", "info");
+      showToast("情報抽出を開始しました。", "info");
       
-      // 個別画像のOCR処理を開始
-      await api.post(`/ocr/start/${id}`);
+      // 情報抽出のみを実行
+      await api.post(`/ocr/extract/${id}`, { image_id: id });
       
       // 抽出画面に切り替え
       setActiveView("extraction");
@@ -859,32 +856,8 @@ function OcrResult() {
       startPolling();
     } catch (error: any) {
       console.error("再抽出エラー:", error);
-      
-      if (error.response?.status === 503) {
-        setIsEndpointWarming(true);
-        // 元の結果を保持するため、extractionStatusを元に戻す
-        setExtractionStatus("completed");
-        
-        // 10秒ごとにエンドポイント状態をポーリング
-        const pollInterval = setInterval(async () => {
-          try {
-            const statusResponse = await api.get('/ocr/endpoint-status');
-            
-            if (statusResponse.data.ready) {
-              clearInterval(pollInterval);
-              setIsEndpointWarming(false);
-              
-              // リトライ
-              await executeReExtract();
-            }
-          } catch (pollError) {
-            console.error('ポーリングエラー:', pollError);
-          }
-        }, 10000);
-      } else {
-        showToast(error.response?.data?.detail || "再抽出に失敗しました", "error");
-        setExtractionStatus("failed");
-      }
+      showToast(error.response?.data?.detail || "再抽出に失敗しました", "error");
+      setExtractionStatus("failed");
     }
   };
 
@@ -955,7 +928,7 @@ function OcrResult() {
               </button>
               <button
                 onClick={handleReExtract}
-                disabled={loading || extractionStatus === 'processing' || isEndpointWarming}
+                disabled={loading || extractionStatus === 'processing'}
                 className="px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-1.5 text-sm"
                 title="再度抽出"
               >
@@ -1100,12 +1073,6 @@ function OcrResult() {
         isOpen={customPromptModalOpen}
         onClose={() => setCustomPromptModalOpen(false)}
         appName={appName}
-      />
-
-      {/* エンドポイント起動中表示 */}
-      <LoadingToast
-        show={isEndpointWarming}
-        message={`OCRエンドポイント起動中（約10分）\n\nこの画面を開いたままにすると起動後に自動でOCR処理を開始します。\n画面を閉じてもバックグラウンドで起動処理は継続されます。`}
       />
     </div>
   );
