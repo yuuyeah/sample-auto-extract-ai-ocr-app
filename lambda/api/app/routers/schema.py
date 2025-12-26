@@ -73,7 +73,7 @@ async def update_custom_prompt(app_name: str, request: CustomPromptRequest):
 
 @router.post("/apps")
 async def create_app(request: SchemaSaveRequest):
-    """アプリを新規作成する（統一API）"""
+    """アプリを新規作成する"""
     try:
         result = await schema_service.save_schema(request)
         return result
@@ -84,7 +84,7 @@ async def create_app(request: SchemaSaveRequest):
 
 @router.put("/apps/{app_name}")
 async def update_app(app_name: str, request: SchemaSaveRequest):
-    """既存アプリを更新する（統一API）"""
+    """既存アプリを更新する"""
     try:
         result = await schema_service.update_schema(app_name, request)
         return result
@@ -106,7 +106,7 @@ async def delete_app(app_name: str):
 
 @router.post("/apps/schema/generate-presigned-url")
 async def generate_app_schema_presigned_url(request: PresignedUrlRequest):
-    """アプリスキーマ用の署名付きURLを生成する（統一API）"""
+    """アプリスキーマ用の署名付きURLを生成する"""
     try:
         result = await schema_service.generate_schema_presigned_url(request)
         return result
@@ -117,7 +117,7 @@ async def generate_app_schema_presigned_url(request: PresignedUrlRequest):
 
 @router.post("/apps/{app_name}/schema/generate")
 async def generate_app_schema(app_name: str, request: SchemaGenerateRequest):
-    """アプリのスキーマを自動生成する（統一API）"""
+    """アプリのスキーマを自動生成する"""
     try:
         result = await schema_service.generate_schema(request)
         return result
