@@ -17,7 +17,8 @@ def process_image_handler(event, context):
     Args:
         event: {
             'image_id': str,
-            'job_id': str
+            'job_id': str,
+            'skip_ocr': bool (optional)
         }
     
     Returns:
@@ -28,12 +29,13 @@ def process_image_handler(event, context):
         }
     """
     image_id = event['image_id']
+    skip_ocr = event.get('skip_ocr', False)
     
-    logger.info(f"Processing image: {image_id}")
+    logger.info(f"Processing image: {image_id}, skip_ocr: {skip_ocr}")
     
     try:
         pipeline = ImageProcessingPipeline()
-        pipeline.process_complete_pipeline(image_id)
+        pipeline.process_complete_pipeline(image_id, skip_ocr)
         
         logger.info(f"Successfully processed image: {image_id}")
         

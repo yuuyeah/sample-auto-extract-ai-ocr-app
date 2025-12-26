@@ -16,13 +16,14 @@ class ImageProcessingPipeline:
         self.ocr_service = OcrService()
         self.extraction_service = ExtractionService()
 
-    def process_complete_pipeline(self, image_id: str) -> None:
+    def process_complete_pipeline(self, image_id: str, skip_ocr: bool = False) -> None:
         """OCR→情報抽出の完全パイプラインを実行"""
         try:
-            logger.info(f"Starting complete pipeline for image {image_id}")
+            logger.info(f"Starting pipeline for image {image_id}, skip_ocr: {skip_ocr}")
 
-            # 1. OCR処理
-            self.ocr_service.process_image_ocr(image_id)
+            if not skip_ocr:
+                # 1. OCR処理
+                self.ocr_service.process_image_ocr(image_id)
 
             # 2. 情報抽出処理
             self.extraction_service.extract_information(image_id)

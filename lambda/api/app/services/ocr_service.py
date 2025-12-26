@@ -203,15 +203,16 @@ class OcrService:
             logger.error(f"OCR job start error: {str(e)}")
             raise
 
-    async def start_step_functions_for_image(self, image_id: str) -> Dict[str, Any]:
+    async def start_step_functions_for_image(self, image_id: str, skip_ocr: bool = False) -> Dict[str, Any]:
         """指定画像のStep Functions OCR処理を開始する"""
         try:
-            # エンドポイント状態確認
-            status = get_inference_component_status()
-            
-            if not status['ready']:
-                trigger_endpoint_wakeup()
-                raise ValueError('endpoint_not_ready')
+            # OCRをスキップしない場合のみエンドポイント状態確認
+            if not skip_ocr:
+                status = get_inference_component_status()
+                
+                if not status['ready']:
+                    trigger_endpoint_wakeup()
+                    raise ValueError('endpoint_not_ready')
             
             job_id = str(uuid.uuid4())
             
@@ -225,7 +226,7 @@ class OcrService:
                 name=f"ocr-single-{image_id}-{job_id[:8]}",
                 input=json.dumps({
                     'job_id': job_id,
-                    'images': [{'image_id': image_id}]
+                    'images': [{'image_id': image_id, 'skip_ocr': skip_ocr}]
                 })
             )
             
