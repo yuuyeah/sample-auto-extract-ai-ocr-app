@@ -74,6 +74,12 @@ cdk destroy
 >
 > GitHub 版の Yomitoku は CC BY-NC-SA 4.0 ライセンスが適用されます（[詳細](https://github.com/kotaro-kinoshita/yomitoku?tab=readme-ov-file#license)）。このライセンスでは商用利用が制限されているため、ご注意ください。
 
+## AI Agent による情報検証機能（Experimental）
+
+![Agent機能](docs/imgs/agent-screen.png)
+
+本システムでは、Amazon Bedrock AgentCore を活用した AI Agent による抽出結果の自動検証・補正機能を提供しています。例えば、Agent は抽出された情報を既存の顧客データベースと照合し、不整合や欠損を自動検出して修正候補を提案します。金額の計算ミスや必須項目の抜け漏れなども自動チェックし、従来の手作業による確認作業と比較して処理時間の短縮と精度向上を実現します。
+
 ### 開発方法
 
 #### ローカルでの開発手順
