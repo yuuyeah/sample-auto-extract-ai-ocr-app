@@ -56,10 +56,10 @@ async def update_ocr_result(image_id: str, edited_ocr_data: dict):
 
 
 @router.post("/start/{image_id}")
-async def start_ocr_for_image(image_id: str):
+async def start_ocr_for_image(image_id: str, skip_ocr: bool = False):
     """指定した画像IDのOCR処理を開始する（Step Functions版）"""
     try:
-        result = await ocr_service.start_step_functions_for_image(image_id)
+        result = await ocr_service.start_step_functions_for_image(image_id, skip_ocr)
         return result
     except ValueError as e:
         if str(e) == 'endpoint_not_ready':

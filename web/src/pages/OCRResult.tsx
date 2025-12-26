@@ -847,8 +847,8 @@ function OcrResult() {
       setPollingAttemptCount(0);
       showToast("情報抽出を開始しました。", "info");
       
-      // 情報抽出のみを実行
-      await api.post(`/ocr/extract/${id}`, { image_id: id });
+      // 情報抽出のみを実行（OCRスキップ）
+      await api.post(`/ocr/start/${id}?skip_ocr=true`);
       
       // 抽出画面に切り替え
       setActiveView("extraction");
@@ -856,7 +856,7 @@ function OcrResult() {
       startPolling();
     } catch (error: any) {
       console.error("再抽出エラー:", error);
-      showToast(error.response?.data?.detail || "再抽出に失敗しました", "error");
+      showToast(error.response?.data?.detail?.message || error.response?.data?.detail || "再抽出に失敗しました", "error");
       setExtractionStatus("failed");
     }
   };
