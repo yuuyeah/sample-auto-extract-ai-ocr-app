@@ -7,7 +7,6 @@ from services.s3_sync_service import S3SyncService
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/s3-sync", tags=["S3 Sync"])
 
-# S3同期サービスのインスタンス
 s3_sync_service = S3SyncService()
 
 
@@ -30,4 +29,15 @@ async def import_s3_file(app_name: str, file_data: dict):
         return result
     except Exception as e:
         logger.error(f"Error importing S3 file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.get("/{app_name}/list")
+async def list_s3_files_with_duplicate_check(app_name: str, prefix: Optional[str] = None):
+    """S3ファイル一覧を重複チェック付きで取得する"""
+    try:
+        result = await s3_sync_service.get_files_with_duplicate_check(app_name, prefix)
+        return result
+    except Exception as e:
+        logger.error(f"Error listing S3 files with duplicate check: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")

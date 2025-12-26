@@ -13,6 +13,7 @@ from repositories import (
     get_field_names_for_app, get_custom_prompt_for_app, update_app_schema,
     delete_app_schema, delete_images_by_app_name
 )
+from repositories.image_repository import create_s3_sync_folder, get_images_by_sync_source
 from domains.schema_generator import generate_schema_fields_from_image
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,21 @@ class SchemaService:
 
     def __init__(self):
         self.bucket_name = settings.BUCKET_NAME
+
+    def _create_s3_sync_folder_if_needed(self, app_data: dict, app_name: str):
+        """S3同期が有効な場合のみフォルダを作成"""
+        if app_data.get("input_methods", {}).get("s3_sync", False):
+            create_s3_sync_folder(app_name)
+
+    def _build_app_data(self, request: SchemaSaveRequest) -> dict:
+        """リクエストからapp_dataを構築"""
+        return {
+            "name": request.name,
+            "display_name": request.display_name,
+            "description": request.description or f"{request.display_name}からの情報抽出",
+            "fields": request.fields,
+            "input_methods": request.input_methods
+        }
 
     async def get_apps_list(self) -> Dict[str, Any]:
         """アプリ一覧を取得する"""
@@ -87,37 +103,15 @@ class SchemaService:
             logger.error(f"Error updating custom prompt: {str(e)}")
             raise
 
-    async def create_app(self, app_data: dict) -> Dict[str, str]:
-        """新しいアプリを作成または更新する"""
-        try:
-            app_name = app_data.get("name")
-            if not app_name:
-                raise ValueError("アプリ名が指定されていません")
-
-            # 必須フィールドの検証
-            required_fields = ["display_name", "fields"]
-            for field in required_fields:
-                if field not in app_data:
-                    raise ValueError(f"必須フィールドがありません: {field}")
-
-            # アプリスキーマを更新
-            update_app_schema(app_name, app_data)
-
-            logger.info(f"Created/updated app: {app_name}")
-            return {"status": "success", "message": f"アプリ '{app_name}' を作成/更新しました"}
-        except Exception as e:
-            logger.error(f"Error creating app: {str(e)}")
-            raise
-
     async def delete_app(self, app_name: str) -> None:
         """アプリを削除する"""
         try:
             # 1. 関連する画像データを削除
             delete_images_by_app_name(app_name)
-            
+
             # 2. スキーマを削除
             delete_app_schema(app_name)
-            
+
             logger.info(f"Deleted app and related images: {app_name}")
         except Exception as e:
             logger.error(f"Error deleting app: {str(e)}")
@@ -144,18 +138,11 @@ class SchemaService:
             if not request.input_methods.get("file_upload", False) and not request.input_methods.get("s3_sync", False):
                 raise ValueError("ファイルアップロードまたはS3同期のいずれかを有効にする必要があります")
 
-            # S3同期が有効な場合、S3 URIが必要
-            if request.input_methods.get("s3_sync", False) and not request.input_methods.get("s3_uri"):
-                raise ValueError("S3同期が有効な場合、S3 URIを指定する必要があります")
-
             # スキーマデータを作成
-            app_data = {
-                "name": request.name,
-                "display_name": request.display_name,
-                "description": request.description or f"{request.display_name}からの情報抽出",
-                "fields": request.fields,
-                "input_methods": request.input_methods
-            }
+            app_data = self._build_app_data(request)
+
+            # S3同期が有効な場合、フォルダを作成
+            self._create_s3_sync_folder_if_needed(app_data, request.name)
 
             # スキーマを保存
             update_app_schema(request.name, app_data)
@@ -269,18 +256,11 @@ class SchemaService:
             if not request.input_methods.get("file_upload", False) and not request.input_methods.get("s3_sync", False):
                 raise ValueError("ファイルアップロードまたはS3同期のいずれかを有効にする必要があります")
 
-            # S3同期が有効な場合、S3 URIが必要
-            if request.input_methods.get("s3_sync", False) and not request.input_methods.get("s3_uri"):
-                raise ValueError("S3同期が有効な場合、S3 URIを指定する必要があります")
-
             # スキーマデータを作成
-            app_data = {
-                "name": request.name,
-                "display_name": request.display_name,
-                "description": request.description or f"{request.display_name}からの情報抽出",
-                "fields": request.fields,
-                "input_methods": request.input_methods
-            }
+            app_data = self._build_app_data(request)
+
+            # S3同期が有効な場合、フォルダを作成
+            self._create_s3_sync_folder_if_needed(app_data, app_name)
 
             # スキーマを更新
             update_app_schema(app_name, app_data)

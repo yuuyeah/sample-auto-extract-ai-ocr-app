@@ -86,6 +86,7 @@ export class OcrAppStack extends cdk.Stack {
       userPoolClientId: auth.client.userPoolClientId,
       apiUrl: api.apiEndpoint,
       enableOcr: enableOcr,
+      syncBucketName: api.syncBucket.bucketName,
     });
 
     // 出力
