@@ -19,6 +19,9 @@ export class OcrAppStack extends cdk.Stack {
     // OCRエンジンを取得（デフォルトはpaddle）
     const ocrEngine = this.node.tryGetContext("ocr_engine") ?? "paddle";
 
+    // OCRエンジンを取得（デフォルトはpaddle）
+    const ocrEngine = this.node.tryGetContext("ocr_engine") ?? "paddle";
+
     // Agent有効フラグを取得（デフォルトはfalse）
     const enableAgent = this.node.tryGetContext("enable_agent") ?? false;
     const enableAgentDemo =
@@ -39,7 +42,7 @@ export class OcrAppStack extends cdk.Stack {
       const ocr = new Ocr(this, "OcrEndpoint", {
         enableZeroScale: enableZeroScale,
         scaleInCooldownSeconds: scaleInCooldownSeconds,
-        ocrEngine: ocrEngine as "paddle" | "deepseek"
+        ocrEngine: ocrEngine as "paddle" | "deepseek",
       });
       ocrEndpoint = ocr;
     }
