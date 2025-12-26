@@ -44,6 +44,7 @@ export class OcrAppStack extends cdk.Stack {
       agent = new Agent(this, "Agent", {
         region: this.region,
         enableDemo: enableAgentDemo,
+        schemasTable: database.schemasTable,
       });
     }
 

@@ -6,11 +6,8 @@ import {
   Role,
   ServicePrincipal,
 } from "aws-cdk-lib/aws-iam";
-import {
-  Function,
-  Runtime,
-  Code,
-} from "aws-cdk-lib/aws-lambda";
+import { PythonFunction } from "@aws-cdk/aws-lambda-python-alpha";
+import { Runtime } from "aws-cdk-lib/aws-lambda";
 import {
   Table,
   AttributeType,
@@ -23,6 +20,7 @@ import * as path from "path";
 export interface AgentProps {
   region: string;
   enableDemo?: boolean;
+  schemasTable: Table;
 }
 
 export class Agent extends Construct {
@@ -131,67 +129,15 @@ export class Agent extends Construct {
       });
 
       // Insert demo data
-      const handler = new Function(this, "DemoDataHandler", {
+      const handler = new PythonFunction(this, "DemoDataHandler", {
         runtime: Runtime.PYTHON_3_12,
-        handler: "index.handler",
+        handler: "handler",
         timeout: Duration.seconds(60),
-        code: Code.fromInline(`
-import boto3
-import json
-
-def handler(event, context):
-    print(f"Event: {json.dumps(event)}")
-    
-    if event['RequestType'] == 'Delete':
-        return {'PhysicalResourceId': 'demo-data'}
-    
-    if event['RequestType'] != 'Create':
-        return {'PhysicalResourceId': 'demo-data'}
-    
-    dynamodb = boto3.resource('dynamodb')
-    table_name = event['ResourceProperties']['TableName']
-    table = dynamodb.Table(table_name)
-    
-    # Insert demo customers
-    customers = [
-        {
-            'customer_id': 'CUST001',
-            'customer_name': 'サンプル株式会社',
-            'postal_code': '〒123-4567',
-            'address': '東京都目黒区上目黒1-2-3 サンプルビル 6階',
-            'phone': '03-1234-5679',
-            'email': 'info@sample.co.jp',
-            'contact_person': 'サンプル太郎'
-        },
-        {
-            'customer_id': 'CUST002',
-            'customer_name': 'テスト商事株式会社',
-            'postal_code': '〒100-0001',
-            'address': '東京都千代田区千代田1-1-1',
-            'phone': '03-0000-0001',
-            'email': 'contact@test-corp.co.jp',
-            'contact_person': '田中花子'
-        },
-        {
-            'customer_id': 'CUST003',
-            'customer_name': '株式会社デモカンパニー',
-            'postal_code': '〒150-0001',
-            'address': '東京都渋谷区神宮前1-1-1',
-            'phone': '03-9999-9999',
-            'email': 'info@demo-company.jp',
-            'contact_person': '山田次郎'
-        }
-    ]
-    
-    for customer in customers:
-        table.put_item(Item=customer)
-        print(f"Inserted customer: {customer['customer_id']}")
-    
-    return {'PhysicalResourceId': 'demo-data'}
-        `),
+        entry: path.join(__dirname, "../../lambda/demo-custom-resource"),
       });
 
       this.customersTable.grantWriteData(handler);
+      props.schemasTable.grantWriteData(handler);
 
       const provider = new Provider(this, "DemoDataProvider", {
         onEventHandler: handler,
@@ -200,7 +146,8 @@ def handler(event, context):
       new CustomResource(this, "DemoData", {
         serviceToken: provider.serviceToken,
         properties: {
-          TableName: this.customersTable.tableName,
+          CustomersTableName: this.customersTable.tableName,
+          SchemasTableName: props.schemasTable.tableName,
         },
       });
     }

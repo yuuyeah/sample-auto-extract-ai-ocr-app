@@ -1,0 +1,151 @@
+[
+    {
+        "name": "quote_number",
+        "display_name": "見積No.",
+        "type": "string"
+    },
+    {
+        "name": "issue_date",
+        "display_name": "発行日",
+        "type": "string"
+    },
+    {
+        "name": "total_amount",
+        "display_name": "御見積金額",
+        "type": "string"
+    },
+    {
+        "name": "client_info",
+        "display_name": "宛先情報",
+        "type": "map",
+        "fields": [
+            {
+                "name": "company_name",
+                "display_name": "会社名",
+                "type": "string"
+            },
+            {
+                "name": "postal_code",
+                "display_name": "郵便番号",
+                "type": "string"
+            },
+            {
+                "name": "address",
+                "display_name": "住所",
+                "type": "string"
+            },
+            {
+                "name": "department",
+                "display_name": "部署",
+                "type": "string"
+            },
+            {
+                "name": "contact_person",
+                "display_name": "担当者",
+                "type": "string"
+            }
+        ]
+    },
+    {
+        "name": "issuer_info",
+        "display_name": "発行者情報",
+        "type": "map",
+        "fields": [
+            {
+                "name": "company_name",
+                "display_name": "会社名",
+                "type": "string"
+            },
+            {
+                "name": "postal_code",
+                "display_name": "郵便番号",
+                "type": "string"
+            },
+            {
+                "name": "address",
+                "display_name": "住所",
+                "type": "string"
+            },
+            {
+                "name": "phone",
+                "display_name": "電話番号",
+                "type": "string"
+            },
+            {
+                "name": "email",
+                "display_name": "メールアドレス",
+                "type": "string"
+            },
+            {
+                "name": "contact_person",
+                "display_name": "担当者",
+                "type": "string"
+            }
+        ]
+    },
+    {
+        "name": "items",
+        "display_name": "見積明細",
+        "type": "list",
+        "items": {
+            "type": "map",
+            "fields": [
+                {
+                    "name": "item_number",
+                    "display_name": "No.",
+                    "type": "string"
+                },
+                {
+                    "name": "description",
+                    "display_name": "項目",
+                    "type": "string"
+                },
+                {
+                    "name": "quantity",
+                    "display_name": "数量",
+                    "type": "string"
+                },
+                {
+                    "name": "unit",
+                    "display_name": "単位",
+                    "type": "string"
+                },
+                {
+                    "name": "unit_price",
+                    "display_name": "単価",
+                    "type": "string"
+                },
+                {
+                    "name": "amount",
+                    "display_name": "金額",
+                    "type": "string"
+                }
+            ]
+        }
+    },
+    {
+        "name": "subtotal",
+        "display_name": "小計",
+        "type": "string"
+    },
+    {
+        "name": "tax_rate",
+        "display_name": "消費税率",
+        "type": "string"
+    },
+    {
+        "name": "tax_amount",
+        "display_name": "消費税額",
+        "type": "string"
+    },
+    {
+        "name": "grand_total",
+        "display_name": "合計",
+        "type": "string"
+    },
+    {
+        "name": "notes",
+        "display_name": "備考",
+        "type": "string"
+    }
+]
