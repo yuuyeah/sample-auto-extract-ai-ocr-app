@@ -64,6 +64,20 @@ cdk deploy
 cdk destroy
 ```
 
+### SageMaker インスタンスのゼロスケーリング
+
+本アプリケーションでは、OCR 処理に使用する GPU インスタンスのコストを削減するため、一定時間アクセスがない場合に自動的にインスタンス数を 0 にスケールダウンする機能を実装しています。再度 OCR 処理が必要になった際は、インスタンスの起動に約 10 分程度の時間がかかるため注意してください。
+
+`cdk.json` にて、ゼロスケーリング機能の設定を変更することができます。
+
+```
+"sagemaker_zero_scale": true,
+"sagemaker_scale_in_cooldown_seconds": 3600
+```
+
+- `sagemaker_zero_scale`: ゼロスケーリング機能の有効/無効（デフォルト: `true`）
+- `sagemaker_scale_in_cooldown_seconds`: スケールダウンまでの待機時間（秒）（デフォルト: `3600` = 1時間）
+
 ## 高精度日本語 OCR エンジンへの変更
 
 デフォルトでは OCR エンジンとして PaddleOCR を利用していますが、高精度の日本語 OCR エンジン「Yomitoku」に切り替えることも可能です。Yomitoku の場合は、[AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-64qkuwrqi4lhi) からサブスクライブした後、利用することが可能です。利用方法としては、[ocr.py](lambda/api/app/ocr.py#L36) における SageMaker Endpoint の呼び出しにおいて、Yomitoku の SageMaker Endpoint を指定します。また、[Inference Component](lambda/api/app/ocr.py#L40) の記述をコメントアウトする必要があります。DeepSeek OCR に切り替えたい場合は、[OCR エンジンへの変更(PaddleOCR or DeepSeek OCR)](#ocr-エンジンへの変更paddleocr-or-deepseek-ocr) をご参照ください。
