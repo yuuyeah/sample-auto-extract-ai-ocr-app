@@ -2,7 +2,7 @@
 
 AutoExtract は OCR + Bedrock を活用した帳票読み取りの AI-OCR ソリューションです。帳票からの情報抽出を半自動化し、人間によるデータ入力チェックをサポートするツールです。
 
-デモ（OCR エンジンとして Yomitoku を使用）
+デモ
 
 ![demo](docs/imgs/demo.gif)
 
