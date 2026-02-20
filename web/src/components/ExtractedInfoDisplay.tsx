@@ -385,16 +385,16 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
               <thead className="bg-gray-50">
                 <tr>
                   {field.items.fields.map((itemField) => (
-                    <th 
+                    <th
                       key={itemField.name}
-                      scope="col" 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      scope="col"
+                      className={`text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${editMode ? 'px-3 py-2' : 'px-6 py-3'}`}
                     >
                       {itemField.display_name}
                     </th>
                   ))}
                   {editMode && (
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       操作
                     </th>
                   )}
@@ -404,7 +404,7 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
                 {listData.map((item: any, itemIndex: number) => (
                   <tr key={itemIndex}>
                     {field.items!.fields!.map(itemField => (
-                      <td key={itemField.name} className="px-6 py-4 whitespace-nowrap">
+                      <td key={itemField.name} className={editMode ? "px-3 py-2" : "px-6 py-4 whitespace-nowrap"}>
                         {editMode ? (
                           <input
                             type="text"
@@ -424,7 +424,7 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
                       </td>
                     ))}
                     {editMode && (
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-3 py-2 whitespace-nowrap">
                         <button
                           type="button"
                           onClick={() => {
@@ -530,8 +530,8 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
           </div>
         ) : (
           /* 抽出ビュー時: 通常のボタン */
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between flex-wrap gap-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 onClick={toggleEditMode}
                 className="px-4 py-2 rounded bg-blue-500 hover:bg-blue-600 text-white"
@@ -575,7 +575,7 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
             </div>
             
             {/* 確認完了チェックボックス */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 whitespace-nowrap">
               <input
                 type="checkbox"
                 id="verification-complete"

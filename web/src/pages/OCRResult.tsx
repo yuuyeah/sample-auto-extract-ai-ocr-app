@@ -15,12 +15,12 @@ import ConfirmModal from "../components/ConfirmModal";
 import CustomPromptModal from "../components/CustomPromptModal";
 
 const styles = {
-  container: "p-4 w-full h-screen overflow-hidden",
-  row: "flex flex-col lg:flex-row w-full h-[calc(100vh-2rem)] gap-4",
+  container: "p-4 w-full h-screen overflow-y-auto lg:overflow-hidden",
+  row: "flex flex-col lg:flex-row w-full lg:h-[calc(100vh-2rem)] gap-4",
   panel: "w-full flex flex-col",
-  leftPanel: "lg:w-1/2 p-4 overflow-hidden flex flex-col", // 50%に戻す
-  rightPanel: "lg:w-1/2 p-4 flex flex-col", // 50%に戻す
-  header: "flex justify-between mb-4 flex-shrink-0 min-h-[60px] items-center",
+  leftPanel: "lg:w-1/2 p-4 overflow-hidden flex flex-col min-h-[50vh] lg:min-h-0",
+  rightPanel: "lg:w-1/2 p-4 flex flex-col min-h-[50vh] lg:min-h-0",
+  header: "flex justify-between mb-4 flex-shrink-0 min-h-[60px] items-center flex-wrap gap-2",
   title: "text-xl font-semibold",
   loadingContainer: "flex justify-center items-center flex-grow",
   spinner:
@@ -915,29 +915,30 @@ function OcrResult() {
                 {filename || "画像プレビュー"}
               </span>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => setCustomPromptModalOpen(true)}
-                className="px-3 py-1.5 bg-indigo-500 text-white rounded hover:bg-indigo-600 flex items-center gap-1.5 text-sm"
-                title="カスタムプロンプト"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                <span className="hidden sm:inline">カスタムプロンプト</span>
-              </button>
-              <button
-                onClick={handleReExtract}
-                disabled={loading || extractionStatus === 'processing'}
-                className="px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-1.5 text-sm"
-                title="再度抽出"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                <span className="hidden sm:inline">再度抽出</span>
-              </button>
-            </div>
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCustomPromptModalOpen(true)}
+                  className="px-3 py-1.5 bg-indigo-500 text-white rounded hover:bg-indigo-600 flex items-center gap-1.5 text-sm"
+                  title="カスタムプロンプト"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  <span className="hidden sm:inline">カスタムプロンプト</span>
+                </button>
+                <button
+                  onClick={handleReExtract}
+                  disabled={loading || extractionStatus === 'processing'}
+                  className="px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-1.5 text-sm"
+                  title="再度抽出"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span className="hidden sm:inline">再度抽出</span>
+                </button>
+              </div>
             {isMultipage && (
               <div className="flex items-center gap-2">
                 <button
@@ -961,6 +962,7 @@ function OcrResult() {
                 </button>
               </div>
             )}
+            </div>
           </div>
 
           <div className={styles.contentArea}>
