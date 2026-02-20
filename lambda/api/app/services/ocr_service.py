@@ -160,12 +160,13 @@ class OcrService:
     async def start_step_functions_job(self, request) -> Dict[str, Any]:
         """Step FunctionsでOCRジョブを開始する"""
         try:
-            # エンドポイント状態確認
-            status = get_inference_component_status()
-            
-            if not status['ready']:
-                trigger_endpoint_wakeup()
-                raise ValueError('endpoint_not_ready')
+            # OCR有効時のみエンドポイント状態確認
+            if self.enable_ocr:
+                status = get_inference_component_status()
+
+                if not status['ready']:
+                    trigger_endpoint_wakeup()
+                    raise ValueError('endpoint_not_ready')
             
             job_id = str(uuid.uuid4())
             app_name = request.app_name
@@ -206,10 +207,10 @@ class OcrService:
     async def start_step_functions_for_image(self, image_id: str, skip_ocr: bool = False) -> Dict[str, Any]:
         """指定画像のStep Functions OCR処理を開始する"""
         try:
-            # OCRをスキップしない場合のみエンドポイント状態確認
-            if not skip_ocr:
+            # OCRをスキップしない場合かつOCR有効時のみエンドポイント状態確認
+            if not skip_ocr and self.enable_ocr:
                 status = get_inference_component_status()
-                
+
                 if not status['ready']:
                     trigger_endpoint_wakeup()
                     raise ValueError('endpoint_not_ready')

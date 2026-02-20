@@ -77,6 +77,8 @@ async def start_ocr_for_image(image_id: str, skip_ocr: bool = False):
 async def get_endpoint_status():
     """エンドポイントの状態を確認（ポーリング用）"""
     try:
+        if not settings.ENABLE_OCR:
+            return {"ready": True, "status": "ocr_disabled"}
         status = get_inference_component_status()
         return status
     except Exception as e:
