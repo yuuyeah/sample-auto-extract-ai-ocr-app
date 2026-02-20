@@ -15,7 +15,9 @@ from utils import decimal_to_float
 from clients import s3_client
 from domains.extraction_engine import (
     extract_information_from_multi_images_with_ocr,
-    extract_information_from_single_image_with_ocr
+    extract_information_from_single_image_with_ocr,
+    extract_information_from_multi_images_without_ocr,
+    extract_information_from_single_image_without_ocr
 )
 
 logger = logging.getLogger(__name__)
@@ -70,12 +72,7 @@ class MultiImageExtractor(InformationExtractor):
             if not isinstance(converted_s3_keys, list):
                 converted_s3_keys = [converted_s3_keys]
 
-            from domains.extraction_engine import get_multipage_ocr_results
-            ocr_results = get_multipage_ocr_results(self.image_id)
-
-            if not ocr_results:
-                raise ValueError("OCR結果が見つかりません")
-
+            # S3から画像データを取得（OCR有無に関わらず必要）
             page_images = []
             content_type = 'image/jpeg'
             for s3_key in converted_s3_keys:
@@ -96,19 +93,39 @@ class MultiImageExtractor(InformationExtractor):
             if not page_images:
                 raise ValueError("画像データを取得できませんでした")
 
-            result = extract_information_from_multi_images_with_ocr(
-                page_images=page_images,
-                content_type=content_type,
-                ocr_results=ocr_results,
-                app_extraction_fields=app_extraction_fields,
-                field_names=field_names,
-                custom_prompt=custom_prompt
-            )
+            if settings.ENABLE_OCR:
+                from domains.extraction_engine import get_multipage_ocr_results
+                ocr_results = get_multipage_ocr_results(self.image_id)
+
+                if not ocr_results:
+                    raise ValueError("OCR結果が見つかりません")
+
+                result = extract_information_from_multi_images_with_ocr(
+                    page_images=page_images,
+                    content_type=content_type,
+                    ocr_results=ocr_results,
+                    app_extraction_fields=app_extraction_fields,
+                    field_names=field_names,
+                    custom_prompt=custom_prompt
+                )
+            else:
+                logger.info("OCR無効: without_ocrモードで複数画像情報抽出を実行")
+                images_data = [
+                    {'bytes': img, 'content_type': content_type}
+                    for img in page_images
+                ]
+                result = extract_information_from_multi_images_without_ocr(
+                    images_data=images_data,
+                    app_extraction_fields=app_extraction_fields,
+                    field_names=field_names,
+                    custom_prompt=custom_prompt
+                )
+                result["mapping"] = {}
 
             update_extracted_info(
                 self.image_id,
                 result["extracted_info"],
-                result["mapping"],
+                result.get("mapping", {}),
                 'completed'
             )
             update_image_status(self.image_id, "completed")
@@ -147,7 +164,6 @@ class SingleImageExtractor(InformationExtractor):
             logger.info(
                 f"処理アプリ: {app_name}, フィールド数: {len(app_extraction_fields.get('fields', []))}")
 
-            ocr_result = image_data.get("ocr_result", {})
             converted_s3_keys = image_data.get("converted_s3_key", [])
 
             if not converted_s3_keys:
@@ -166,19 +182,30 @@ class SingleImageExtractor(InformationExtractor):
             image_bytes = s3_response['Body'].read()
             content_type = s3_response.get('ContentType', 'image/jpeg')
 
-            result = extract_information_from_single_image_with_ocr(
-                image_data=image_bytes,
-                content_type=content_type,
-                ocr_result=ocr_result,
-                app_extraction_fields=app_extraction_fields,
-                field_names=field_names,
-                custom_prompt=custom_prompt
-            )
+            if settings.ENABLE_OCR:
+                ocr_result = image_data.get("ocr_result", {})
+                result = extract_information_from_single_image_with_ocr(
+                    image_data=image_bytes,
+                    content_type=content_type,
+                    ocr_result=ocr_result,
+                    app_extraction_fields=app_extraction_fields,
+                    field_names=field_names,
+                    custom_prompt=custom_prompt
+                )
+            else:
+                logger.info("OCR無効: without_ocrモードで単一画像情報抽出を実行")
+                result = extract_information_from_single_image_without_ocr(
+                    image_bytes=image_bytes,
+                    app_extraction_fields=app_extraction_fields,
+                    field_names=field_names,
+                    custom_prompt=custom_prompt
+                )
+                result["mapping"] = {}
 
             update_extracted_info(
                 self.image_id,
                 result["extracted_info"],
-                result["mapping"],
+                result.get("mapping", {}),
                 'completed'
             )
             update_image_status(self.image_id, "completed")
