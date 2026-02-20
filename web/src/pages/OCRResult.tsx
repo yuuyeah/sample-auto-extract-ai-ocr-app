@@ -553,15 +553,16 @@ function OcrResult() {
   };
 
   // 抽出情報の保存
-  const saveExtractedInfo = async () => {
+  const saveExtractedInfo = async (dataToSave?: Record<string, any>) => {
     if (!id) return;
 
     try {
+      const infoToSave = dataToSave || extractedInfo;
       // 最新の状態を使用してPOSTリクエストを送信
-      console.log("保存するデータ:", extractedInfo);
-      
+      console.log("保存するデータ:", infoToSave);
+
       const response = await api.post(`/ocr/extract/edit/${id}`, {
-        extracted_info: extractedInfo,
+        extracted_info: infoToSave,
         mapping: mapping,
       });
 

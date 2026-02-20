@@ -6,7 +6,7 @@ import { isAgentEnabled } from '../config';
 interface ExtractedInfoDisplayProps {
   extractedInfo: Record<string, any>;
   fields: Field[];
-  onSave: () => void;
+  onSave: (data?: Record<string, any>) => void;
   onHighlightField: (field: string, stayOnExtractionView?: boolean) => void;
   onHighlightCell: (fieldName: string, rowIndex: number, columnName: string) => void;
   onUpdateExtractedInfo: (info: Record<string, any>) => void;
@@ -78,11 +78,7 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
       // 親コンポーネントに編集後のデータを渡す
       console.log("編集後のデータ:", editedInfo);
       onUpdateExtractedInfo(editedInfo);
-      
-      // 少し遅延させてから保存処理を実行（状態更新が反映されるのを待つ）
-      setTimeout(() => {
-        onSave();
-      }, 100);
+      onSave(editedInfo);
     }
     setEditMode(!editMode);
   };
