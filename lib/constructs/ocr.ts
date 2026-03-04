@@ -27,7 +27,7 @@ import * as path from "path";
 
 export interface OcrProps {
   baseName?: string;
-  ocrEngine?: "paddle" | "deepseek";
+  ocrEngine?: "paddle" | "deepseek" | "yomitoku";
   instanceType?: string;
   environment?: Record<string, string>;
   enableZeroScale?: boolean;
@@ -45,14 +45,18 @@ export class Ocr extends Construct {
     // デフォルト値の設定
     const baseName = props.baseName || "ocr";
     const ocrEngine = props.ocrEngine || "paddle";
-    const instanceType =
-      props.instanceType ||
-      (ocrEngine === "paddle" ? "ml.g4dn.2xlarge" : "ml.g4dn.4xlarge");
+    const instanceTypeMap: Record<string, string> = {
+      paddle: "ml.g4dn.2xlarge",
+      deepseek: "ml.g4dn.4xlarge",
+      yomitoku: "ml.g5.2xlarge",
+    };
+    const instanceType = props.instanceType || instanceTypeMap[ocrEngine] || "ml.g4dn.2xlarge";
 
     // OCRエンジンに応じたコンテナパス
-    const containerMap = {
+    const containerMap: Record<string, string> = {
       paddle: "paddle-ocr",
       deepseek: "deepseek-ocr",
+      yomitoku: "yomitoku",
     };
     const containerPath = path.join(
       __dirname,
@@ -78,6 +82,14 @@ export class Ocr extends Construct {
         TORCH_CUDA_ARCH_LIST: "8.6",
         NVIDIA_VISIBLE_DEVICES: "all",
         NVIDIA_DRIVER_CAPABILITIES: "compute,utility",
+      };
+    }
+
+    // YomiToku OCR用の追加環境変数
+    if (ocrEngine === "yomitoku") {
+      defaultEnv = {
+        ...defaultEnv,
+        PYTORCH_CUDA_ALLOC_CONF: "max_split_size_mb:512",
       };
     }
 
