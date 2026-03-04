@@ -53,6 +53,13 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
     }
   }, [extractedInfo, editMode]);
 
+  // オブジェクトをReactで描画可能な文字列に変換する
+  const toDisplayString = (value: any, fallback: string = ''): string => {
+    if (value === null || value === undefined) return fallback;
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+  };
+
   // ページ読み込み時にツール一覧を取得
   useEffect(() => {
     if (onGetTools) {
@@ -331,7 +338,7 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
                   <div className="relative">
                     <input
                       type="text"
-                      value={mapValue[subField.name] || ''}
+                      value={toDisplayString(mapValue[subField.name])}
                       onChange={(e) => updateMapFieldValue(field.name, subField.name, e.target.value)}
                       className="w-full p-2 border border-gray-300 rounded"
                       onFocus={() => onHighlightField(fieldPath, true)}
@@ -352,7 +359,7 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
                     className="p-2 bg-gray-50 border border-gray-200 rounded cursor-pointer hover:bg-gray-100"
                     onClick={() => onHighlightField(fieldPath, true)}
                   >
-                    {mapValue[subField.name] || '(抽出されませんでした)'}
+                    {toDisplayString(mapValue[subField.name], '(抽出されませんでした)')}
                   </div>
                 )}
                 {suggestion && renderSuggestion(suggestion)}
@@ -404,7 +411,7 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
                         {editMode ? (
                           <input
                             type="text"
-                            value={item[itemField.name] || ''}
+                            value={toDisplayString(item[itemField.name])}
                             onChange={(e) => updateListItemProperty(field.name, itemIndex, itemField.name, e.target.value)}
                             className="w-full p-1 border border-gray-300 rounded"
                             onFocus={() => onHighlightCell(field.name, itemIndex, itemField.name)}
@@ -414,7 +421,7 @@ const ExtractedInfoDisplay: React.FC<ExtractedInfoDisplayProps> = ({
                             className="text-sm text-gray-900 cursor-pointer hover:bg-blue-50 p-1 rounded"
                             onClick={() => onHighlightCell(field.name, itemIndex, itemField.name)}
                           >
-                            {item[itemField.name] || ''}
+                            {toDisplayString(item[itemField.name])}
                           </div>
                         )}
                       </td>
